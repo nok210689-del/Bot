@@ -54,8 +54,8 @@
 </div>
 
 <script>
-    // ⚙️ 나중에 서버를 배포한 뒤, 실제 백엔드 API 주소로 변경해야 합니다. (예: https://your-app.fly.dev/api/apply)
-    const BACKEND_URL = "https://bot-gzag.onrender.com/api/apply";
+    // 본인의 실제 Render 백엔드 주소 설정 완료
+    const BACKEND_URL = "https://bot-t3zc.onrender.com/api/apply";
 
     // URL 주소창에서 디스코드 ID 추출하기 (예: ?discord_id=123456789)
     const urlParams = new URLSearchParams(window.location.search);
@@ -75,7 +75,7 @@
         const statusDiv = document.getElementById('status');
         
         submitBtn.disabled = true;
-        submitBtn.innerText = "제출 중...";
+        submitBtn.innerText = "제출하기";
         statusDiv.innerText = "";
 
         const formData = {
