@@ -33,11 +33,12 @@ if not TOKEN or not guild_id_str:
 GUILD_ID = int(guild_id_str)
 GITHUB_BASE_URL = "https://nok210689-del.github.io/Bot/"
 NOTICE_CHANNEL_ID = 1414170433883996211  # 공지 채널 ID
+ADMIN_CHANNEL_ID = 1568751408294002879   # 용병 지원 알림을 받을 관리자 채널 ID
 
 class ApplyData(BaseModel):
     discord_id: str
     nickname: str
-    role_type: str  
+    role_type: str  # '손님' 또는 '용병'
     job: str        
     apply_date: str 
 
@@ -93,6 +94,24 @@ async def process_application(data: ApplyData):
         except discord.Forbidden:
             raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
 
+        # 지원자가 '용병'을 선택했을 때 관리자 채널로 알림 전송
+        if data.role_type == "용병":
+            admin_channel = guild.get_channel(ADMIN_CHANNEL_ID)
+            if admin_channel:
+                admin_embed = discord.Embed(
+                    title="🚨 용병 지원 요청 알림",
+                    description=(
+                        f"새로운 **용병** 지원서가 제출되었습니다!\n\n"
+                        f"• **지원자:** {member.mention} ({member.name})\n"
+                        f"• **인게임 닉네임:** `{data.nickname}`\n"
+                        f"• **직업:** `{data.job}`\n"
+                        f"• **지원 날짜:** `{date_short}`\n"
+                        f"• **변경된 닉네임:** `{new_nickname}`"
+                    ),
+                    color=0xFEE75C 
+                )
+                await admin_channel.send(embed=admin_embed)
+
         return {"status": "success", "message": f"{new_nickname} 님 적용 완료!"}
 
     future = asyncio.run_coroutine_threadsafe(_process_discord_actions(), bot.loop)
@@ -136,49 +155,4 @@ async def create_panel(ctx):
     embed = discord.Embed(
         title="🍁 메이플랜드 파티 지원서 접수처",
         description=(
-            f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!**\n\n"
-            "아래 **[지원서 작성하기]** 버튼을 누르시면 DM으로 지원서 링크가 발송됩니다."
-        ),
-        color=0x5865F2
-    )
-    
-    view = ApplyView()
-    await ctx.send(embed=embed, view=view)
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-# 5. 기존 !지원서 명령어
-@bot.command(name="지원서")
-async def apply_link_cmd(ctx):
-    user_id = ctx.author.id
-    github_page_url = f"{GITHUB_BASE_URL}?discord_id={user_id}"
-    
-    embed = discord.Embed(
-        title="🍁 메이플랜드 파티 지원 안내",
-        description=(
-            f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!**\n\n"
-            "아래 버튼을 눌러 지원서를 작성해 주세요."
-        ),
-        color=0xED4245
-    )
-    
-    view = discord.ui.View()
-    view.add_item(discord.ui.Button(label="지원서 작성하기", url=github_page_url, style=discord.ButtonStyle.link))
-    
-    try:
-        await ctx.author.send(embed=embed, view=view)
-        await ctx.send(f"{ctx.author.mention} 님, DM으로 지원서 링크를 보내드렸습니다!", delete_after=10)
-    except discord.Forbidden:
-        await ctx.send(f"{ctx.author.mention} 님, DM 차단이 켜져 있어 전송에 실패했습니다. DM을 열어주세요.")
-
-def run_web():
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-if __name__ == "__main__":
-    web_thread = threading.Thread(target=run_web)
-    web_thread.daemon = True
-    web_thread.start()
-    
-    bot.run(TOKEN)
+            f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!
