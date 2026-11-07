@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>메이플랜드 파티 지원서</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+        body { background-color: #1e1f22; color: #dbdee1; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .card { background-color: #2b2d31; padding: 30px; border-radius: 12px; width: 100%; max-width: 440px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        h2 { text-align: center; color: #fff; margin-bottom: 24px; font-size: 22px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; color: #b5bac1; font-weight: 600; }
+        input, select { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #1e1f22; background-color: #383a40; color: #fff; font-size: 15px; outline: none; }
+        input:focus, select:focus { border-color: #5865f2; }
+        button { width: 100%; padding: 14px; border: none; border-radius: 6px; background-color: #5865f2; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        button:hover { background-color: #4752c4; }
+        #status { margin-top: 15px; text-align: center; font-size: 14px; font-weight: bold; }
+        .success { color: #2dc770; }
+        .error { color: #f23f43; }
+        .help-text { font-size: 11px; color: #949ba4; margin-top: 4px; display: block; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>파티 지원서 제출</h2>
+    <form id="applyForm">
+        <div class="form-group">
+            <label for="discordId">디스코드 사용자 ID (숫자)</label>
+            <input type="text" id="discordId" placeholder="예: 123456789012345678" required>
+            <span class="help-text">디스코드 개발자 모드 켜고 [사용자 ID 복사] 한 값입니다.</span>
+        </div>
+        
+        <div class="form-group">
+            <label for="nickname">인게임 닉네임</label>
+            <input type="text" id="nickname" placeholder="예: 홍길동" required>
+        </div>
+
+        <div class="form-group">
+            <label for="roleType">구분</label>
+            <select id="roleType" required>
+                <option value="손님">손님</option>
+                <option value="용병">용병</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="job">직업</label>
+            <input type="text" id="job" placeholder="예: 비숍" required>
+        </div>
+
+        <button type="submit" id="submitBtn">제출하기</button>
+    </form>
+    <div id="status"></div>
+</div>
+
+<script>
+    // ⚙️ 백엔드 서버 주소 (나중에 Fly.io 등에 배포한 서버 주소로 변경)
+    const BACKEND_URL = "https://your-app-name.fly.dev/api/apply";
+
+    document.getElementById('applyForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+        
+        submitBtn.disabled = true;
+        submitBtn.innerText = "제출 중...";
+        statusDiv.innerText = "";
+
+        const formData = {
+            discord_id: document.getElementById('discordId').value.trim(),
+            nickname: document.getElementById('nickname').value.trim(),
+            role_type: document.getElementById('roleType').value,
+            job: document.getElementById('job').value.trim()
+        };
+
+        try {
+            const response = await fetch(BACKEND_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(formData)
+            });
+
+            if (response.ok) {
+                statusDiv.className = "success";
+                statusDiv.innerText = "✅ 제출 완료! 디스코드에서 역할과 닉네임이 변경되었습니다.";
+                document.getElementById('applyForm').reset();
+            } else {
+                throw new Error("서버 처리 실패");
+            }
+        } catch (err) {
+            statusDiv.className = "error";
+            statusDiv.innerText = "❌ 제출 실패: 서버 연결을 확인해주세요.";
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "제출하기";
+        }
+    });
+</script>
+
+</body>
+</html>
