@@ -1,4 +1,5 @@
 import os
+import asyncio
 import uvicorn
 import threading
 from fastapi import FastAPI, HTTPException
@@ -49,45 +50,52 @@ async def on_ready():
 # 2. 웹페이지에서 [제출하기]를 누르면 실행되는 API 엔드포인트
 @app.post("/api/apply")
 async def process_application(data: ApplyData):
-    guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        raise HTTPException(status_code=500, detail="디스코드 서버를 찾을 수 없습니다.")
-
-    try:
-        user_id = int(data.discord_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="유효하지 않은 디스코드 ID 형식입니다.")
-
-    try:
-        member = await guild.fetch_member(user_id)
-    except discord.NotFound:
-        raise HTTPException(status_code=404, detail="서버에 없는 유저입니다. 먼저 서버에 입장해 주세요.")
-    except discord.HTTPException:
-        raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
-
-    # 3. 닉네임 형식 조합 및 32글자 제한 방어
-    new_nickname = f"[{data.role_type}] [{data.job}] {data.nickname}"
-    if len(new_nickname) > 32:
-        raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다. 닉네임을 짧게 입력해 주세요.")
     
-    try:
-        await member.edit(nick=new_nickname)
-    except discord.Forbidden:
-        raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다. (봇 역할 위치를 서버 제일 위로 올리세요)")
+    # 디스코드 API 작업들을 봇의 메인 이벤트 루프에서 안전하게 실행하기 위한 내부 함수
+    async def _process_discord_actions():
+        guild = bot.get_guild(GUILD_ID)
+        if not guild:
+            raise HTTPException(status_code=500, detail="디스코드 서버를 찾을 수 없습니다.")
 
-    # 4. 역할(Role) 부여 로직
-    role_name = data.role_type 
-    role = discord.utils.get(guild.roles, name=role_name)
-    
-    if not role:
-        raise HTTPException(status_code=500, detail=f"디스코드 서버 내에 '{role_name}' 역할(Role)이 존재하지 않습니다. 역할을 먼저 생성해 주세요.")
+        try:
+            user_id = int(data.discord_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="유효하지 않은 디스코드 ID 형식입니다.")
 
-    try:
-        await member.add_roles(role)
-    except discord.Forbidden:
-        raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            raise HTTPException(status_code=404, detail="서버에 없는 유저입니다. 먼저 서버에 입장해 주세요.")
+        except discord.HTTPException:
+            raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
 
-    return {"status": "success", "message": f"{new_nickname} 님 적용 완료!"}
+        # 3. 닉네임 형식 조합 및 32글자 제한 방어
+        new_nickname = f"[{data.role_type}] [{data.job}] {data.nickname}"
+        if len(new_nickname) > 32:
+            raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다. 닉네임을 짧게 입력해 주세요.")
+        
+        try:
+            await member.edit(nick=new_nickname)
+        except discord.Forbidden:
+            raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다. (봇 역할 위치를 서버 제일 위로 올리세요)")
+
+        # 4. 역할(Role) 부여 로직
+        role_name = data.role_type 
+        role = discord.utils.get(guild.roles, name=role_name)
+        
+        if not role:
+            raise HTTPException(status_code=500, detail=f"디스코드 서버 내에 '{role_name}' 역할(Role)이 존재하지 않습니다. 역할을 먼저 생성해 주세요.")
+
+        try:
+            await member.add_roles(role)
+        except discord.Forbidden:
+            raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
+
+        return {"status": "success", "message": f"{new_nickname} 님 적용 완료!"}
+
+    # 스레드 간 이벤트 루프 충돌을 방지하기 위해 bot.loop로 안전하게 전달하여 실행
+    future = asyncio.run_coroutine_threadsafe(_process_discord_actions(), bot.loop)
+    return await asyncio.wrap_future(future)
 
 # 5. 디스코드 명령어: 유저에게 맞춤형 웹페이지 링크 생성해 주기
 @bot.command(name="지원서")
