@@ -11,6 +11,12 @@ from discord.ext import commands
 # 1. FastAPI 및 디스코드 봇 설정
 app = FastAPI()
 
+# ─── [추가] cron-job 핑을 받아줄 루트 경로 (404 에러 방지용) ───
+@app.get("/")
+def home():
+    return {"status": "running"}
+# -------------------------------------------------------------
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,7 +39,7 @@ if not TOKEN or not guild_id_str:
 GUILD_ID = int(guild_id_str)
 GITHUB_BASE_URL = "https://nok210689-del.github.io/Bot/"
 NOTICE_CHANNEL_ID = 1414170433883996211  # 공지 채널 ID
-ADMIN_CHANNEL_ID = 1568751408294002879   # 관리자 채널 ID
+ADMIN_CHANNEL_ID = 1568751408294002879    # 관리자 채널 ID
 
 class ApplyData(BaseModel):
     discord_id: str
