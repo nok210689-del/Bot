@@ -34,6 +34,7 @@ if not TOKEN or not guild_id_str:
     raise ValueError("DISCORD_TOKEN 또는 GUILD_ID 환경 변수가 설정되지 않았습니다.")
 
 GUILD_ID = int(guild_id_str)
+GITHUB_BASE_URL = "https://nok210689-del.github.io/Bot/"
 
 # 웹에서 받을 데이터 양식 (Pydantic)
 class ApplyData(BaseModel):
@@ -52,7 +53,6 @@ async def on_ready():
 @app.post("/api/apply")
 async def process_application(data: ApplyData):
     
-    # 디스코드 API 작업들을 봇의 메인 이벤트 루프에서 안전하게 실행하기 위한 내부 함수
     async def _process_discord_actions():
         guild = bot.get_guild(GUILD_ID)
         if not guild:
@@ -70,31 +70,30 @@ async def process_application(data: ApplyData):
         except discord.HTTPException:
             raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
 
-        # 3. 년도를 제외하고 '월.일' 형식으로 변환 (예: '2026-11-09' -> '11.09')
+        # 날짜 포맷 변환 (2026-11-09 -> 11.09)
         try:
             parts = data.apply_date.split("-")
             date_short = f"{parts[1]}.{parts[2]}"
         except Exception:
             date_short = data.apply_date
 
-        # 요청하신 닉네임 형식 조합: [구분][직업][월.일]닉네임 (예: [손님][비숍][11.09]소여)
+        # 닉네임 형식 조합: [손님][비숍][11.09]소여
         new_nickname = f"[{data.role_type}][{data.job}][{date_short}]{data.nickname}"
         
-        # 32자 제한 방어
         if len(new_nickname) > 32:
-            raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다. 닉네임을 짧게 입력해 주세요.")
+            raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다.")
         
         try:
             await member.edit(nick=new_nickname)
         except discord.Forbidden:
-            raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다. (봇 역할 위치를 서버 제일 위로 올리세요)")
+            raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다.")
 
-        # 4. 역할(Role) 부여 로직
+        # 역할 부여 로직
         role_name = data.role_type 
         role = discord.utils.get(guild.roles, name=role_name)
         
         if not role:
-            raise HTTPException(status_code=500, detail=f"디스코드 서버 내에 '{role_name}' 역할(Role)이 존재하지 않습니다. 역할을 먼저 생성해 주세요.")
+            raise HTTPException(status_code=500, detail=f"디스코드 서버 내에 '{role_name}' 역할이 없습니다.")
 
         try:
             await member.add_roles(role)
@@ -103,15 +102,61 @@ async def process_application(data: ApplyData):
 
         return {"status": "success", "message": f"{new_nickname} 님 적용 완료!"}
 
-    # 스레드 간 이벤트 루프 충돌을 방지하기 위해 bot.loop로 안전하게 전달하여 실행
     future = asyncio.run_coroutine_threadsafe(_process_discord_actions(), bot.loop)
     return await asyncio.wrap_future(future)
 
-# 5. 디스코드 명령어: 유저에게 맞춤형 웹페이지 링크 생성해 주기
+
+# 3. 영구적인 버튼 뷰 (채널과 DM에서 버튼 상호작용을 처리하는 클래스)
+class ApplyView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None) # 시간이 지나도 버튼이 안 풀리게 설정
+
+    @discord.ui.button(label="지원서 작성하기", style=discord.ButtonStyle.primary, custom_id="persistent_apply_button")
+    async def apply_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        github_page_url = f"{GITHUB_BASE_URL}?discord_id={user_id}"
+        
+        embed = discord.Embed(
+            title="🍁 메이플랜드 파티 지원 안내",
+            description="아래 버튼을 눌러 웹페이지에서 지원서를 작성해 주세요.\n본인 계정으로 자동 연동된 링크입니다.",
+            color=0x5865F2
+        )
+        
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="웹 지원서 열기", url=github_page_url, style=discord.ButtonStyle.link))
+        
+        try:
+            # 버튼을 누른 유저의 DM으로 맞춤형 링크 전송
+            await interaction.user.send(embed=embed, view=view)
+            await interaction.response.send_message("📩 DM으로 지원서 링크를 보내드렸습니다! 확인해 주세요.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ DM 차단이 켜져 있어서 링크를 보낼 수 없습니다. 다이렉트 메시지를 허용해 주세요!", ephemeral=True)
+
+
+# 4. 관리자가 채널에 패널(버튼)을 띄우는 명령어: !패널
+@bot.command(name="패널")
+@commands.has_permissions(administrator=True)
+async def create_panel(ctx):
+    embed = discord.Embed(
+        title="🍁 메이플랜드 파티 지원서 접수처",
+        description="아래 **[지원서 작성하기]** 버튼을 누르시면, **봇이 DM으로 개인 맞춤 링크**를 보내드립니다.\n링크를 통해 닉네임과 직업, 날짜를 제출해 주세요!",
+        color=0x5865F2
+    )
+    
+    view = ApplyView()
+    await ctx.send(embed=embed, view=view)
+    # 명령어 입력한 원래 메시지는 깔끔하게 삭제
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
+
+# 5. 기존 !지원서 명령어 (원하신다면 유지, 필요 없으면 삭제 가능)
 @bot.command(name="지원서")
-async def apply_link(ctx):
+async def apply_link_cmd(ctx):
     user_id = ctx.author.id
-    github_page_url = f"https://nok210689-del.github.io/Bot/?discord_id={user_id}"
+    github_page_url = f"{GITHUB_BASE_URL}?discord_id={user_id}"
     
     embed = discord.Embed(
         title="🍁 메이플랜드 파티 지원 안내",
@@ -126,7 +171,8 @@ async def apply_link(ctx):
         await ctx.author.send(embed=embed, view=view)
         await ctx.send(f"{ctx.author.mention} 님, DM으로 지원서 링크를 보내드렸습니다!", delete_after=10)
     except discord.Forbidden:
-        await ctx.send(f"{ctx.author.mention} 님, DM(다이렉트 메시지) 차단이 켜져 있어 전송에 실패했습니다. DM을 열어주세요.")
+        await ctx.send(f"{ctx.author.mention} 님, DM 차단이 켜져 있어 전송에 실패했습니다. DM을 열어주세요.")
+
 
 # 6. FastAPI 웹 서버와 디스코드 봇을 동시에 실행하는 구문
 def run_web():
