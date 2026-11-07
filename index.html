@@ -26,7 +26,6 @@
 <div class="card">
     <h2>파티 지원서 제출</h2>
     
-    <!-- 디스코드에서 자동으로 넘어온 ID 표시 영역 -->
     <div id="userInfo" class="user-info">🔗 디스코드 계정 연동 완료</div>
 
     <form id="applyForm">
@@ -54,14 +53,11 @@
 </div>
 
 <script>
-    // 본인의 실제 Render 백엔드 주소 설정 완료
     const BACKEND_URL = "https://bot-t3zc.onrender.com/api/apply";
 
-    // URL 주소창에서 디스코드 ID 추출하기 (예: ?discord_id=123456789)
     const urlParams = new URLSearchParams(window.location.search);
     const discordId = urlParams.get('discord_id');
 
-    // 만약 주소창에 ID가 없다면 (직접 접속한 경우) 경고 표시
     if (!discordId) {
         document.getElementById('userInfo').className = "user-info error";
         document.getElementById('userInfo').innerText = "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
@@ -75,11 +71,11 @@
         const statusDiv = document.getElementById('status');
         
         submitBtn.disabled = true;
-        submitBtn.innerText = "제출하기";
+        submitBtn.innerText = "제출 중...";
         statusDiv.innerText = "";
 
         const formData = {
-            discord_id: discordId, // URL에서 자동으로 가져온 ID 사용
+            discord_id: discordId,
             nickname: document.getElementById('nickname').value.trim(),
             role_type: document.getElementById('roleType').value,
             job: document.getElementById('job').value.trim()
@@ -97,11 +93,12 @@
                 statusDiv.innerText = "✅ 제출 완료! 디스코드에서 역할과 닉네임이 변경되었습니다.";
                 document.getElementById('applyForm').reset();
             } else {
-                throw new Error("서버 처리 실패");
+                const errData = await response.json();
+                throw new Error(errData.detail || "서버 처리 실패");
             }
         } catch (err) {
             statusDiv.className = "error";
-            statusDiv.innerText = "❌ 제출 실패: 서버 연결을 확인해주세요.";
+            statusDiv.innerText = "❌ 제출 실패: " + (err.message || "서버 연결을 확인해주세요.");
             submitBtn.disabled = false;
             submitBtn.innerText = "제출하기";
         }
