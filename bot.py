@@ -155,4 +155,24 @@ async def create_panel(ctx):
     embed = discord.Embed(
         title="🍁 메이플랜드 파티 지원서 접수처",
         description=(
-            f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!
+            f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!**\n\n"
+            "아래 버튼을 누르면 지원서를 작성할 수 있는 링크를 DM으로 보내드립니다."
+        ),
+        color=0x5865F2
+    )
+    
+    view = ApplyView()
+    await ctx.send(embed=embed, view=view)
+
+
+# 5. 봇 실행 및 FastAPI 서버 통합 실행 (Threading 방식)
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+
+if __name__ == "__main__":
+    # FastAPI를 백그라운드 스레드로 실행
+    fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
+    fastapi_thread.start()
+
+    # 디스코드 봇 실행
+    bot.run(TOKEN)
