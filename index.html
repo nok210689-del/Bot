@@ -47,6 +47,11 @@
             <input type="text" id="job" placeholder="예: 비숍" required>
         </div>
 
+        <div class="form-group">
+            <label for="applyDate">참여 희망 날짜</label>
+            <input type="date" id="applyDate" required>
+        </div>
+
         <button type="submit" id="submitBtn">제출하기</button>
     </form>
     <div id="status"></div>
@@ -78,7 +83,8 @@
             discord_id: discordId,
             nickname: document.getElementById('nickname').value.trim(),
             role_type: document.getElementById('roleType').value,
-            job: document.getElementById('job').value.trim()
+            job: document.getElementById('job').value.trim(),
+            apply_date: document.getElementById('applyDate').value
         };
 
         try {
