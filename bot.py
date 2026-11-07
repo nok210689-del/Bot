@@ -35,13 +35,13 @@ if not TOKEN or not guild_id_str:
 
 GUILD_ID = int(guild_id_str)
 
-# 웹에서 받을 데이터 양식 (Pydantic) - apply_date 추가됨
+# 웹에서 받을 데이터 양식 (Pydantic)
 class ApplyData(BaseModel):
     discord_id: str
     nickname: str
     role_type: str  # '손님' 또는 '용병'
     job: str        # '비숍' 등
-    apply_date: str # '2026-11-08' 등 날짜 데이터
+    apply_date: str # '2026-11-09' 등 날짜 데이터
 
 @bot.event
 async def on_ready():
@@ -70,10 +70,17 @@ async def process_application(data: ApplyData):
         except discord.HTTPException:
             raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
 
-        # 3. 닉네임 형식 조합 (날짜 포함: 예전 2026-11-08 형식을 11/08 등으로 보기 좋게 변경 가능)
-        date_short = data.apply_date.replace("-", "/") # 예: 2026-11-08 -> 2026/11/08 (또는 뒷자리만 쓰고 싶다면 수정 가능)
-        new_nickname = f"[{data.role_type}] [{data.job}] [{date_short}] {data.nickname}"
+        # 3. 년도를 제외하고 '월.일' 형식으로 변환 (예: '2026-11-09' -> '11.09')
+        try:
+            parts = data.apply_date.split("-")
+            date_short = f"{parts[1]}.{parts[2]}"
+        except Exception:
+            date_short = data.apply_date
+
+        # 요청하신 닉네임 형식 조합: [구분][직업][월.일]닉네임 (예: [손님][비숍][11.09]소여)
+        new_nickname = f"[{data.role_type}][{data.job}][{date_short}]{data.nickname}"
         
+        # 32자 제한 방어
         if len(new_nickname) > 32:
             raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다. 닉네임을 짧게 입력해 주세요.")
         
