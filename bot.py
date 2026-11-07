@@ -22,7 +22,7 @@ app.add_middleware(
 # 디스코드 봇 인텐트 설정
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True  # <-- 이 부분이 추가되었습니다!
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 깃허브 시크릿 또는 환경 변수에서 토큰 및 서버 ID 불러오기
@@ -54,29 +54,38 @@ async def process_application(data: ApplyData):
         raise HTTPException(status_code=500, detail="디스코드 서버를 찾을 수 없습니다.")
 
     try:
-        member = await guild.fetch_member(int(data.discord_id))
-    except discord.NotFound:
-        raise HTTPException(status_code=404, detail="서버에 없는 유저입니다.")
-    except Exception:
-        raise HTTPException(status_code=400, detail="잘못된 디스코드 ID입니다.")
+        user_id = int(data.discord_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="유효하지 않은 디스코드 ID 형식입니다.")
 
-    # 3. 닉네임 변경 형식 조합 (예: [손님] [비숍] 홍길동)
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        raise HTTPException(status_code=404, detail="서버에 없는 유저입니다. 먼저 서버에 입장해 주세요.")
+    except discord.HTTPException:
+        raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
+
+    # 3. 닉네임 형식 조합 및 32글자 제한 방어
     new_nickname = f"[{data.role_type}] [{data.job}] {data.nickname}"
+    if len(new_nickname) > 32:
+        raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다. 닉네임을 짧게 입력해 주세요.")
     
     try:
         await member.edit(nick=new_nickname)
     except discord.Forbidden:
-        raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다. (봇 역할 위치를 위로 올리세요)")
+        raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다. (봇 역할 위치를 서버 제일 위로 올리세요)")
 
     # 4. 역할(Role) 부여 로직
     role_name = data.role_type 
     role = discord.utils.get(guild.roles, name=role_name)
     
-    if role:
-        try:
-            await member.add_roles(role)
-        except discord.Forbidden:
-            raise HTTPException(status_code=403, detail="역할을 부여할 권한이 없습니다.")
+    if not role:
+        raise HTTPException(status_code=500, detail=f"디스코드 서버 내에 '{role_name}' 역할(Role)이 존재하지 않습니다. 역할을 먼저 생성해 주세요.")
+
+    try:
+        await member.add_roles(role)
+    except discord.Forbidden:
+        raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
 
     return {"status": "success", "message": f"{new_nickname} 님 적용 완료!"}
 
@@ -106,10 +115,8 @@ def run_web():
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 if __name__ == "__main__":
-    # 웹 서버를 백그라운드 스레드로 실행
     web_thread = threading.Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
     
-    # 메인 스레드에서 디스코드 봇 구동
     bot.run(TOKEN)
