@@ -22,6 +22,7 @@ app.add_middleware(
 # 디스코드 봇 인텐트 설정
 intents = discord.Intents.default()
 intents.members = True
+intents.message_content = True  # <-- 이 부분이 추가되었습니다!
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 깃허브 시크릿 또는 환경 변수에서 토큰 및 서버 ID 불러오기
