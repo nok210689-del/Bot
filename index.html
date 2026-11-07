@@ -18,20 +18,18 @@
         #status { margin-top: 15px; text-align: center; font-size: 14px; font-weight: bold; }
         .success { color: #2dc770; }
         .error { color: #f23f43; }
-        .help-text { font-size: 11px; color: #949ba4; margin-top: 4px; display: block; }
+        .user-info { background-color: #1e1f22; padding: 10px; border-radius: 6px; font-size: 13px; color: #2dc770; margin-bottom: 18px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h2>파티 지원서 제출</h2>
+    
+    <!-- 디스코드에서 자동으로 넘어온 ID 표시 영역 -->
+    <div id="userInfo" class="user-info">🔗 디스코드 계정 연동 완료</div>
+
     <form id="applyForm">
-        <div class="form-group">
-            <label for="discordId">디스코드 사용자 ID (숫자)</label>
-            <input type="text" id="discordId" placeholder="예: 123456789012345678" required>
-            <span class="help-text">디스코드 개발자 모드 켜고 [사용자 ID 복사] 한 값입니다.</span>
-        </div>
-        
         <div class="form-group">
             <label for="nickname">인게임 닉네임</label>
             <input type="text" id="nickname" placeholder="예: 홍길동" required>
@@ -56,8 +54,19 @@
 </div>
 
 <script>
-    // ⚙️ 백엔드 서버 주소 (나중에 Fly.io 등에 배포한 서버 주소로 변경)
-    const BACKEND_URL = "https://your-app-name.fly.dev/api/apply";
+    // ⚙️ 나중에 서버를 배포한 뒤, 실제 백엔드 API 주소로 변경해야 합니다. (예: https://your-app.fly.dev/api/apply)
+    const BACKEND_URL = "http://localhost:8000/api/apply";
+
+    // URL 주소창에서 디스코드 ID 추출하기 (예: ?discord_id=123456789)
+    const urlParams = new URLSearchParams(window.location.search);
+    const discordId = urlParams.get('discord_id');
+
+    // 만약 주소창에 ID가 없다면 (직접 접속한 경우) 경고 표시
+    if (!discordId) {
+        document.getElementById('userInfo').className = "user-info error";
+        document.getElementById('userInfo').innerText = "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
+        document.getElementById('submitBtn').disabled = true;
+    }
 
     document.getElementById('applyForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -70,7 +79,7 @@
         statusDiv.innerText = "";
 
         const formData = {
-            discord_id: document.getElementById('discordId').value.trim(),
+            discord_id: discordId, // URL에서 자동으로 가져온 ID 사용
             nickname: document.getElementById('nickname').value.trim(),
             role_type: document.getElementById('roleType').value,
             job: document.getElementById('job').value.trim()
@@ -79,9 +88,7 @@
         try {
             const response = await fetch(BACKEND_URL, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData)
             });
 
@@ -95,7 +102,6 @@
         } catch (err) {
             statusDiv.className = "error";
             statusDiv.innerText = "❌ 제출 실패: 서버 연결을 확인해주세요.";
-        } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = "제출하기";
         }
