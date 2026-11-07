@@ -1,5 +1,6 @@
 import os
 import uvicorn
+import threading
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -82,7 +83,6 @@ async def process_application(data: ApplyData):
 @bot.command(name="지원서")
 async def apply_link(ctx):
     user_id = ctx.author.id
-    # 본인의 실제 GitHub Pages 주소로 변경하세요 (예: https://nok210689-del.github.io/Bot/)
     github_page_url = f"https://nok210689-del.github.io/Bot/?discord_id={user_id}"
     
     embed = discord.Embed(
@@ -96,4 +96,19 @@ async def apply_link(ctx):
     
     try:
         await ctx.author.send(embed=embed, view=view)
-        await ctx.send(f"{ctx.author.mention} 님, 지원
+        await ctx.send(f"{ctx.author.mention} 님, DM으로 지원서 링크를 보내드렸습니다!", delete_after=10)
+    except discord.Forbidden:
+        await ctx.send(f"{ctx.author.mention} 님, DM(다이렉트 메시지) 차단이 켜져 있어 전송에 실패했습니다. DM을 열어주세요.")
+
+# 6. FastAPI 웹 서버와 디스코드 봇을 동시에 실행하는 구문
+def run_web():
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+if __name__ == "__main__":
+    # 웹 서버를 백그라운드 스레드로 실행
+    web_thread = threading.Thread(target=run_web)
+    web_thread.daemon = True
+    web_thread.start()
+    
+    # 메인 스레드에서 디스코드 봇 구동
+    bot.run(TOKEN)
