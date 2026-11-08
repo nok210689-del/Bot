@@ -167,7 +167,6 @@ class ReservationView(discord.ui.View):
 
             dm_text = (
                 "🎉 신청하신 예약이 확정되었습니다!\n"
-                "예약현황을 확인해주세요."
             )
 
             result_text = "예약이 확정되었습니다."
