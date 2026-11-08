@@ -123,6 +123,13 @@
             font-size: 12px;
             margin-top: 5px;
         }
+
+        .weekday {
+            color: #5865f2;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 7px;
+        }
     </style>
 </head>
 
@@ -154,8 +161,6 @@
                 <option value="용병">용병</option>
             </select>
         </div>
-
-        <!-- 손님 전용 입력 항목 -->
 
         <div id="guestFields">
 
@@ -208,6 +213,7 @@
                 id="applyDate"
                 required
             >
+            <div id="weekday" class="weekday"></div>
         </div>
 
         <button type="submit" id="submitBtn">
@@ -243,6 +249,38 @@
 
     const returnInput =
         document.getElementById('returnStatus');
+
+    const applyDate =
+        document.getElementById('applyDate');
+
+    const weekday =
+        document.getElementById('weekday');
+
+    // 날짜 선택 시 요일 표시
+    function updateWeekday() {
+        if (!applyDate.value) {
+            weekday.innerText = "";
+            return;
+        }
+
+        const [year, month, day] =
+            applyDate.value.split('-').map(Number);
+
+        const date = new Date(year, month - 1, day);
+
+        const days = [
+            "일", "월", "화", "수",
+            "목", "금", "토"
+        ];
+
+        weekday.innerText =
+            `(${days[date.getDay()]})`;
+    }
+
+    applyDate.addEventListener(
+        'change',
+        updateWeekday
+    );
 
     // 손님 / 용병 선택에 따른 입력 항목 변경
     function updateGuestFields() {
@@ -312,7 +350,6 @@
                 document.getElementById('applyDate')
                     .value,
 
-            // 손님 전용 정보
             level: isGuest
                 ? Number(levelInput.value)
                 : null,
@@ -349,6 +386,7 @@
                 document.getElementById('applyForm').reset();
 
                 updateGuestFields();
+                updateWeekday();
 
             } else {
                 const errData = await response.json();
