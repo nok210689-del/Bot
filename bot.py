@@ -1,29 +1,12 @@
 import os
 import asyncio
+from contextlib import asynccontextmanager
 import uvicorn
-import threading
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import discord
 from discord.ext import commands
-
-# 1. FastAPI 및 디스코드 봇 설정
-app = FastAPI()
-
-# ─── [추가] cron-job 핑을 받아줄 루트 경로 (404 에러 방지용) ───
-@app.get("/")
-def home():
-    return {"status": "running"}
-# -------------------------------------------------------------
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 intents = discord.Intents.default()
 intents.members = True
@@ -41,6 +24,34 @@ GITHUB_BASE_URL = "https://nok210689-del.github.io/Bot/"
 NOTICE_CHANNEL_ID = 1414170433883996211  # 공지 채널 ID
 ADMIN_CHANNEL_ID = 1568751408294002879    # 관리자 채널 ID
 
+# 1. FastAPI Lifespan을 이용해 웹서버와 디스코드 봇을 단일 이벤트 루프에서 통합 실행
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버가 켜질 때 디스코드 봇 백그라운드 태스크 시작
+    bot_task = asyncio.create_task(bot.start(TOKEN))
+    yield
+    # 서버가 꺼질 때 봇 정상 종료
+    await bot.close()
+    try:
+        await bot_task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(lifespan=lifespan)
+
+# cron-job 핑을 받아줄 루트 경로 (404 에러 방지용)
+@app.get("/")
+def home():
+    return {"status": "running"}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class ApplyData(BaseModel):
     discord_id: str
     nickname: str
@@ -51,7 +62,7 @@ class ApplyData(BaseModel):
 @bot.event
 async def on_ready():
     print(f"로그인 완료: {bot.user} (ID: {bot.user.id})")
-    print("디스코드 봇과 백엔드 서버가 정상적으로 준비되었습니다.")
+    print("디스코드 봇과 백엔드 서버가 단일 루프에서 정상적으로 준비되었습니다.")
 
 
 # 관리자가 승인/거절할 때 사용할 승인 버튼 뷰
@@ -106,7 +117,6 @@ class AdminApprovalView(discord.ui.View):
         await interaction.message.edit(embed=approved_embed, view=self)
         await interaction.response.send_message(f"✅ {member.mention}님의 지원을 승인하고 권한을 부여했습니다!", ephemeral=True)
 
-        # 유저에게 DM으로 승인 알림 전송 (선택사항)
         try:
             await member.send(f"🎉 신청하신 용병 지원이 관리자에 의해 **승인**되었습니다! 닉네임과 역할이 적용되었습니다.")
         except:
@@ -127,92 +137,86 @@ class AdminApprovalView(discord.ui.View):
 
 @app.post("/api/apply")
 async def process_application(data: ApplyData):
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        raise HTTPException(status_code=500, detail="디스코드 서버를 찾을 수 없습니다.")
+
+    try:
+        user_id = int(data.discord_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="유효하지 않은 디스코드 ID 형식입니다.")
+
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        raise HTTPException(status_code=404, detail="서버에 없는 유저입니다.")
+    except discord.HTTPException:
+        raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
+
+    try:
+        parts = data.apply_date.split("-")
+        date_short = f"{parts[1]}.{parts[2]}"
+    except Exception:
+        date_short = data.apply_date
+
+    new_nickname = f"[{data.role_type}][{data.job}][{date_short}]{data.nickname}"
     
-    async def _process_discord_actions():
-        guild = bot.get_guild(GUILD_ID)
-        if not guild:
-            raise HTTPException(status_code=500, detail="디스코드 서버를 찾을 수 없습니다.")
+    if len(new_nickname) > 32:
+        raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다.")
+
+    # --- [손님]인 경우: 기존처럼 즉시 적용 ---
+    if data.role_type == "손님":
+        try:
+            await member.edit(nick=new_nickname)
+        except discord.Forbidden:
+            raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다.")
+
+        role = discord.utils.get(guild.roles, name="손님")
+        if not role:
+            raise HTTPException(status_code=500, detail="디스코드 서버 내에 '손님' 역할이 없습니다.")
 
         try:
-            user_id = int(data.discord_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="유효하지 않은 디스코드 ID 형식입니다.")
+            await member.add_roles(role)
+        except discord.Forbidden:
+            raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
 
-        try:
-            member = await guild.fetch_member(user_id)
-        except discord.NotFound:
-            raise HTTPException(status_code=404, detail="서버에 없는 유저입니다.")
-        except discord.HTTPException:
-            raise HTTPException(status_code=400, detail="디스코드 API 통신 중 오류가 발생했습니다.")
+        return {"status": "success", "message": "손님 신청이 완료되었습니다!"}
 
-        try:
-            parts = data.apply_date.split("-")
-            date_short = f"{parts[1]}.{parts[2]}"
-        except Exception:
-            date_short = data.apply_date
+    # --- [용병]인 경우: 관리자 승인 대기 ---
+    elif data.role_type == "용병":
+        admin_channel = guild.get_channel(ADMIN_CHANNEL_ID)
+        if not admin_channel:
+            raise HTTPException(status_code=500, detail="관리자 채널을 찾을 수 없습니다.")
 
-        new_nickname = f"[{data.role_type}][{data.job}][{date_short}]{data.nickname}"
-        
-        if len(new_nickname) > 32:
-            raise HTTPException(status_code=400, detail="조합된 닉네임이 디스코드 제한(32자)을 초과합니다.")
+        admin_embed = discord.Embed(
+            title="🚨 용병 지원 승인 대기 중",
+            description=(
+                f"새로운 **용병** 지원서가 제출되었습니다!\n\n"
+                f"• **지원자:** {member.mention} ({member.name})\n"
+                f"• **인게임 닉네임:** `{data.nickname}`\n"
+                f"• **직업:** `{data.job}`\n"
+                f"• **지원 날짜:** `{date_short}`\n"
+                f"• **예상 닉네임:** `{new_nickname}`\n\n"
+                f"관리자가 아래 버튼을 누르기 전까지는 **권한이 부여되지 않습니다.**"
+            ),
+            color=0xFEE75C 
+        )
 
-        # --- [손님]인 경우: 기존처럼 즉시 적용 ---
-        if data.role_type == "손님":
-            try:
-                await member.edit(nick=new_nickname)
-            except discord.Forbidden:
-                raise HTTPException(status_code=403, detail="봇의 권한이 부족하여 닉네임을 바꿀 수 없습니다.")
+        view = AdminApprovalView(
+            target_user_id=member.id,
+            new_nickname=new_nickname,
+            role_type="용병",
+            date_short=date_short
+        )
 
-            role = discord.utils.get(guild.roles, name="손님")
-            if not role:
-                raise HTTPException(status_code=500, detail="디스코드 서버 내에 '손님' 역할이 없습니다.")
+        await admin_channel.send(embed=admin_embed, view=view)
+        return {"status": "success", "message": "용병 지원이 완료되었습니다. 관리자 승인을 기다려주세요!"}
 
-            try:
-                await member.add_roles(role)
-            except discord.Forbidden:
-                raise HTTPException(status_code=403, detail="역할을 부여할 봇의 권한이 부족합니다.")
-
-            return {"status": "success", "message": "손님 신청이 완료되었습니다!"}
-
-        # --- [용병]인 경우: 관리자 승인 대기 (권한 즉시 부여 안 함) ---
-        elif data.role_type == "용병":
-            admin_channel = guild.get_channel(ADMIN_CHANNEL_ID)
-            if not admin_channel:
-                raise HTTPException(status_code=500, detail="관리자 채널을 찾을 수 없습니다.")
-
-            admin_embed = discord.Embed(
-                title="🚨 용병 지원 승인 대기 중",
-                description=(
-                    f"새로운 **용병** 지원서가 제출되었습니다!\n\n"
-                    f"• **지원자:** {member.mention} ({member.name})\n"
-                    f"• **인게임 닉네임:** `{data.nickname}`\n"
-                    f"• **직업:** `{data.job}`\n"
-                    f"• **지원 날짜:** `{date_short}`\n"
-                    f"• **예상 닉네임:** `{new_nickname}`\n\n"
-                    f"관리자가 아래 버튼을 누르기 전까지는 **권한이 부여되지 않습니다.**"
-                ),
-                color=0xFEE75C 
-            )
-
-            # 승인/거절 버튼 부착
-            view = AdminApprovalView(
-                target_user_id=member.id,
-                new_nickname=new_nickname,
-                role_type="용병",
-                date_short=date_short
-            )
-
-            await admin_channel.send(embed=admin_embed, view=view)
-            return {"status": "success", "message": "용병 지원이 완료되었습니다. 관리자 승인을 기다려주세요!"}
-
-        else:
-            raise HTTPException(status_code=400, detail="유효하지 않은 역할 타입입니다.")
-
-    future = asyncio.run_coroutine_threadsafe(_process_discord_actions(), bot.loop)
-    return await asyncio.wrap_future(future)
+    else:
+        raise HTTPException(status_code=400, detail="유효하지 않은 역할 타입입니다.")
 
 
-# 3. 버튼 클릭 시 DM 발송
+# 버튼 클릭 시 DM 발송
 class ApplyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -242,7 +246,7 @@ class ApplyView(discord.ui.View):
             await interaction.response.send_message("❌ DM 차단이 켜져 있어서 링크를 보낼 수 없습니다. DM을 열어주세요!", ephemeral=True)
 
 
-# 4. 패널 생성 명령어 (!패널)
+# 패널 생성 명령어 (!패널)
 @bot.command(name="패널")
 @commands.has_permissions(administrator=True)
 async def create_panel(ctx):
@@ -259,11 +263,5 @@ async def create_panel(ctx):
     await ctx.send(embed=embed, view=view)
 
 
-# 5. 봇 실행 및 FastAPI 서버 통합 실행
-def run_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
-
 if __name__ == "__main__":
-    fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
-    fastapi_thread.start()
-    bot.run(TOKEN)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
