@@ -130,14 +130,11 @@
         .date-picker-wrap {
             position: relative;
             width: 100%;
-            height: 48px;
         }
 
         .date-display {
-            position: absolute;
-            inset: 0;
             width: 100%;
-            height: 48px;
+            min-height: 48px;
             padding: 12px;
             border-radius: 6px;
             border: 1px solid #1e1f22;
@@ -167,9 +164,9 @@
             height: 48px;
             opacity: 0;
             cursor: pointer;
+            z-index: 2;
             padding: 0;
             border: 0;
-            z-index: 2;
         }
 
         .date-picker-wrap:focus-within .date-display {
@@ -423,7 +420,6 @@
 
             try {
 
-                // 전송 데이터 생성
                 const formData = {
                     discord_id: discordId,
 
