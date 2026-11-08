@@ -1,6 +1,7 @@
 
 import os
 import asyncio
+import re
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -41,9 +42,199 @@ GITHUB_BASE_URL = "https://nok210689-del.github.io/Bot/"
 
 NOTICE_CHANNEL_ID = 1414170433883996211
 ADMIN_CHANNEL_ID = 1568751408294002879
-
-# 손님 예약현황 채널
 RESERVATION_CHANNEL_ID = 1414173512561856512
+
+# 공대장 / 관리자 역할 ID
+ADMIN_ROLE_IDS = {
+    1414176238997602304,  # 공대장
+    1414234299456294953   # 관리자
+}
+
+reservation_view_registered = False
+
+
+# ==============================
+# 관리자 권한 확인
+# ==============================
+
+def is_admin(member):
+    if not isinstance(member, discord.Member):
+        return False
+
+    return any(
+        role.id in ADMIN_ROLE_IDS
+        for role in member.roles
+    )
+
+
+# ==============================
+# 예약확정 / 취소 버튼
+# ==============================
+
+class ReservationView(discord.ui.View):
+
+    def __init__(self, confirmed=False):
+        super().__init__(timeout=None)
+
+        button = discord.ui.Button(
+            label=(
+                "예약확정 취소"
+                if confirmed
+                else "예약확정"
+            ),
+            style=(
+                discord.ButtonStyle.danger
+                if confirmed
+                else discord.ButtonStyle.success
+            ),
+            custom_id="reservation_toggle"
+        )
+
+        button.callback = self.toggle_callback
+        self.add_item(button)
+
+    async def toggle_callback(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        # 관리자 권한 확인
+        if not is_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ 공대장 또는 관리자 역할이 있는 사람만 처리할 수 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        if not interaction.guild or not interaction.message:
+            await interaction.response.send_message(
+                "❌ 서버 정보를 확인할 수 없습니다.",
+                ephemeral=True
+            )
+            return
+
+        message = interaction.message
+        content = message.content
+
+        # 신청자 디스코드 ID 추출
+        match = re.search(
+            r"디코아이디\s*:\s*<@!?(\d+)>",
+            content
+        )
+
+        if not match:
+            await interaction.response.send_message(
+                "❌ 신청자 디스코드 ID를 찾을 수 없습니다.",
+                ephemeral=True
+            )
+            return
+
+        target_user_id = int(match.group(1))
+
+        # 현재 예약 상태 확인
+        confirmed = "상태 : ✅ 예약완료" in content
+
+        if confirmed:
+
+            # 예약확정 취소
+            new_content = content.replace(
+                "상태 : ✅ 예약완료",
+                "상태 : ⏳ 예약대기"
+            )
+
+            new_view = ReservationView(
+                confirmed=False
+            )
+
+            dm_text = (
+                "⚠️ 신청하신 예약의 확정이 취소되었습니다.\n"
+                "자세한 내용은 관리자에게 문의해주세요."
+            )
+
+            result_text = "예약확정을 취소했습니다."
+
+        else:
+
+            # 예약확정
+            new_content = content.replace(
+                "상태 : ⏳ 예약대기",
+                "상태 : ✅ 예약완료"
+            )
+
+            new_view = ReservationView(
+                confirmed=True
+            )
+
+            dm_text = (
+                "🎉 신청하신 예약이 확정되었습니다!\n"
+                "예약현황을 확인해주세요."
+            )
+
+            result_text = "예약이 확정되었습니다."
+
+        if new_content == content:
+            await interaction.response.send_message(
+                "❌ 예약 상태를 변경할 수 없습니다.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(
+            ephemeral=True
+        )
+
+        # 게시글 상태 및 버튼 변경
+        try:
+            await message.edit(
+                content=new_content,
+                view=new_view
+            )
+
+        except discord.HTTPException:
+            await interaction.followup.send(
+                "❌ 예약 상태 변경에 실패했습니다.",
+                ephemeral=True
+            )
+            return
+
+        # 신청자에게 DM 발송
+        dm_success = False
+
+        try:
+            user = await bot.fetch_user(
+                target_user_id
+            )
+
+            await user.send(dm_text)
+            dm_success = True
+
+        except discord.Forbidden:
+            print(
+                f"[DM 실패] {target_user_id} : DM 수신 차단"
+            )
+
+        except discord.HTTPException as e:
+            print(
+                f"[DM 오류] {target_user_id} : {e}"
+            )
+
+        if dm_success:
+            await interaction.followup.send(
+                f"✅ {result_text}\n신청자에게 DM을 발송했습니다.",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ {result_text}\n⚠️ DM 발송에는 실패했습니다.",
+                ephemeral=True
+            )
+
+        print(
+            f"[예약상태 변경] "
+            f"신청자={target_user_id} / "
+            f"상태={'예약대기' if confirmed else '예약완료'} / "
+            f"처리자={interaction.user}"
+        )
 
 
 # ==============================
@@ -52,7 +243,10 @@ RESERVATION_CHANNEL_ID = 1414173512561856512
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    bot_task = asyncio.create_task(bot.start(TOKEN))
+
+    bot_task = asyncio.create_task(
+        bot.start(TOKEN)
+    )
 
     yield
 
@@ -60,6 +254,7 @@ async def lifespan(app: FastAPI):
 
     try:
         await bot_task
+
     except asyncio.CancelledError:
         pass
 
@@ -92,9 +287,17 @@ class ApplyData(BaseModel):
     job: str
     apply_date: str
 
-    # 손님 전용 항목
-    level: Optional[int] = Field(default=None, ge=1, le=300)
-    amount: Optional[int] = Field(default=None, ge=0)
+    level: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=300
+    )
+
+    amount: Optional[int] = Field(
+        default=None,
+        ge=0
+    )
+
     return_status: Optional[str] = None
 
 
@@ -104,12 +307,33 @@ class ApplyData(BaseModel):
 
 @bot.event
 async def on_ready():
-    print(f"로그인 완료: {bot.user} (ID: {bot.user.id})")
-    print("디스코드 봇과 백엔드 서버가 정상적으로 준비되었습니다.")
+
+    global reservation_view_registered
+
+    print(
+        f"로그인 완료: {bot.user} (ID: {bot.user.id})"
+    )
+
+    print(
+        "디스코드 봇과 백엔드 서버가 정상적으로 준비되었습니다."
+    )
+
+    # 재시작 후 예약 버튼 등록
+    if not reservation_view_registered:
+
+        bot.add_view(
+            ReservationView()
+        )
+
+        reservation_view_registered = True
+
+        print(
+            "[시스템] 예약확정 버튼 등록 완료"
+        )
 
 
 # ==============================
-# 관리자 승인 버튼
+# 용병 관리자 승인 버튼
 # ==============================
 
 class AdminApprovalView(discord.ui.View):
@@ -121,6 +345,7 @@ class AdminApprovalView(discord.ui.View):
         role_type: str,
         date_short: str
     ):
+
         super().__init__(timeout=None)
 
         self.target_user_id = target_user_id
@@ -138,6 +363,14 @@ class AdminApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
+        if not is_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ 공대장 또는 관리자 역할이 있는 사람만 처리할 수 있습니다.",
+                ephemeral=True
+            )
+            return
+
         guild = interaction.guild
 
         if not guild:
@@ -151,6 +384,7 @@ class AdminApprovalView(discord.ui.View):
             member = await guild.fetch_member(
                 self.target_user_id
             )
+
         except discord.NotFound:
             await interaction.response.send_message(
                 "❌ 서버에 해당 유저가 존재하지 않습니다.",
@@ -171,7 +405,10 @@ class AdminApprovalView(discord.ui.View):
             return
 
         try:
-            await member.edit(nick=self.new_nickname)
+            await member.edit(
+                nick=self.new_nickname
+            )
+
             await member.add_roles(role)
 
         except discord.Forbidden:
@@ -218,8 +455,11 @@ class AdminApprovalView(discord.ui.View):
                 "🎉 신청하신 용병 지원이 관리자에 의해 "
                 "**승인**되었습니다! 닉네임과 역할이 적용되었습니다."
             )
+
         except discord.HTTPException:
-            pass
+            print(
+                f"[DM 실패] 용병 승인 알림: {member.id}"
+            )
 
     @discord.ui.button(
         label="거절",
@@ -231,6 +471,14 @@ class AdminApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
+        if not is_admin(interaction.user):
+            await interaction.response.send_message(
+                "❌ 공대장 또는 관리자 역할이 있는 사람만 처리할 수 있습니다.",
+                ephemeral=True
+            )
+            return
+
         for child in self.children:
             child.disabled = True
 
@@ -266,15 +514,18 @@ async def register_reservation(
     member: discord.Member,
     data: ApplyData
 ):
+
     channel = guild.get_channel(
         RESERVATION_CHANNEL_ID
     )
 
     if channel is None:
+
         try:
             channel = await bot.fetch_channel(
                 RESERVATION_CHANNEL_ID
             )
+
         except discord.HTTPException:
             raise HTTPException(
                 status_code=500,
@@ -310,14 +561,12 @@ async def register_reservation(
         f"({weekdays[apply_date.weekday()]})"
     )
 
-    # 반납 여부
     return_text = (
         "반납"
         if data.return_status == "반납"
         else "미반납"
     )
 
-    # 예약현황 메시지
     message = (
         f"**{date_text}**\n\n"
         f"알+올목({return_text}) : "
@@ -325,11 +574,20 @@ async def register_reservation(
         f"{data.level} / "
         f"{data.job} / "
         f"{data.amount}\n\n"
-        f"디코아이디 : {member.name}"
+        f"디코아이디 : <@{member.id}>\n\n"
+        f"상태 : ⏳ 예약대기"
     )
 
     try:
-        await channel.send(message)
+        await channel.send(
+            content=message,
+            view=ReservationView(),
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=False,
+                everyone=False
+            )
+        )
 
     except discord.Forbidden:
         raise HTTPException(
@@ -346,7 +604,8 @@ async def register_reservation(
     print(
         f"[예약등록] {date_text} / "
         f"{data.nickname} / {data.level} / "
-        f"{data.job} / {data.amount} / {return_text}"
+        f"{data.job} / {data.amount} / "
+        f"{return_text} / ID={member.id}"
     )
 
 
@@ -376,7 +635,9 @@ async def process_application(data: ApplyData):
         )
 
     try:
-        member = await guild.fetch_member(user_id)
+        member = await guild.fetch_member(
+            user_id
+        )
 
     except discord.NotFound:
         raise HTTPException(
@@ -438,7 +699,6 @@ async def process_application(data: ApplyData):
 
     if data.role_type == "손님":
 
-        # 손님 입력값 검증
         if data.level is None:
             raise HTTPException(
                 status_code=400,
@@ -457,7 +717,6 @@ async def process_application(data: ApplyData):
                 detail="반납 여부를 선택해주세요."
             )
 
-        # 손님 역할 확인
         role = discord.utils.get(
             guild.roles,
             name="손님"
@@ -469,16 +728,17 @@ async def process_application(data: ApplyData):
                 detail="디스코드 서버 내에 '손님' 역할이 없습니다."
             )
 
-        # 예약현황 채널 확인
         reservation_channel = guild.get_channel(
             RESERVATION_CHANNEL_ID
         )
 
         if reservation_channel is None:
+
             try:
                 reservation_channel = await bot.fetch_channel(
                     RESERVATION_CHANNEL_ID
                 )
+
             except discord.HTTPException:
                 raise HTTPException(
                     status_code=500,
@@ -587,6 +847,7 @@ class ApplyView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
         user_id = interaction.user.id
 
         github_page_url = (
