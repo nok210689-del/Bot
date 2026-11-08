@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 import re
@@ -846,6 +845,8 @@ class ApplyView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+        # [수정] 서버가 깨어나는 동안 3초 제한에 걸리지 않도록 지연 응답 먼저 전송
+        await interaction.response.defer(ephemeral=True)
 
         user_id = interaction.user.id
 
@@ -863,7 +864,8 @@ class ApplyView(discord.ui.View):
             )
         )
 
-        await interaction.response.send_message(
+        # [수정] defer를 사용했으므로 response.send_message 대신 followup.send 사용
+        await interaction.followup.send(
             "👇 아래 버튼을 누르면 본인의 디스코드 ID가 포함된 지원서 작성 페이지가 열립니다!",
             view=view,
             ephemeral=True
