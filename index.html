@@ -619,7 +619,9 @@
 
 
     // 날짜 영역 클릭
-    dateDisplay.addEventListener('click', () => {
+    dateDisplay.addEventListener('click', (e) => {
+        // [수정] 이벤트 버블링 차단 (document 클릭 리스너가 곧바로 닫아버리는 것 방지)
+        e.stopPropagation();
 
         if (calendar.classList.contains("hidden")) {
             openCalendar();
@@ -628,10 +630,13 @@
         }
     });
 
+    // [추가] 달력 내부를 클릭했을 때는 닫히지 않도록 버블링 차단
+    calendar.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
 
     // 키보드로 달력 열기
     dateDisplay.addEventListener('keydown', (e) => {
-
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             dateDisplay.click();
