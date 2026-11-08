@@ -39,8 +39,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# cron-job 핑을 받아줄 루트 경로 (404 에러 방지용)
-@app.get("/")
+# UptimeRobot 및 cron-job 핑을 안전하게 받아주도록 GET, HEAD 요청 모두 허용
+@app.api_route("/", methods=["GET", "HEAD"])
 def home():
     return {"status": "running"}
 
