@@ -125,23 +125,52 @@
             margin-top: 5px;
         }
 
-        /* 날짜와 요일을 한 줄로 표시 */
-        .date-row {
+        /* 날짜 입력 영역 */
+        .date-picker-wrap {
+            position: relative;
+            width: 100%;
+        }
+
+        .date-display {
+            width: 100%;
+            min-height: 48px;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #1e1f22;
+            background-color: #383a40;
+            color: #fff;
+            font-size: 15px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: space-between;
+            cursor: pointer;
         }
 
-        .date-row input {
-            flex: 1;
-            min-width: 0;
+        .date-display:focus-within {
+            border-color: #5865f2;
         }
 
-        .weekday {
+        .date-placeholder {
+            color: #949ba4;
+        }
+
+        .date-icon {
+            flex-shrink: 0;
             color: #dbdee1;
-            font-size: 14px;
-            font-weight: bold;
-            white-space: nowrap;
+            font-size: 16px;
+        }
+
+        /* 실제 달력 입력창은 투명하게 겹침 */
+        .native-date {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+            padding: 0;
+            border: 0;
+            z-index: 2;
         }
     </style>
 </head>
@@ -210,26 +239,24 @@
         </div>
 
         <div class="form-group">
-            <label for="job">직업</label>
-            <input
-                type="text"
-                id="job"
-                placeholder="예: 비숍"
-                required
-            >
-        </div>
-
-        <div class="form-group">
             <label for="applyDate">참여 희망 날짜</label>
 
-            <div class="date-row">
+            <div class="date-picker-wrap">
+
+                <div class="date-display">
+                    <span id="dateText" class="date-placeholder">
+                        날짜를 선택해주세요
+                    </span>
+                    <span class="date-icon">▦</span>
+                </div>
+
                 <input
                     type="date"
                     id="applyDate"
+                    class="native-date"
                     required
                 >
 
-                <span id="weekday" class="weekday"></span>
             </div>
         </div>
 
@@ -270,14 +297,16 @@
     const applyDate =
         document.getElementById('applyDate');
 
-    const weekday =
-        document.getElementById('weekday');
+    const dateText =
+        document.getElementById('dateText');
 
-    // 날짜 선택 시 오른쪽에 요일 표시
-    function updateWeekday() {
+
+    // 날짜 표시 형식: 2026-11-26 (목)
+    function updateDateDisplay() {
 
         if (!applyDate.value) {
-            weekday.innerText = "";
+            dateText.innerText = "날짜를 선택해주세요";
+            dateText.classList.add("date-placeholder");
             return;
         }
 
@@ -292,14 +321,29 @@
             "목", "금", "토"
         ];
 
-        weekday.innerText =
-            `(${days[date.getDay()]})`;
+        dateText.innerText =
+            `${applyDate.value} (${days[date.getDay()]})`;
+
+        dateText.classList.remove("date-placeholder");
     }
 
+
+    // 날짜 입력창 클릭 시 달력 열기
+    applyDate.addEventListener('click', () => {
+
+        if (typeof applyDate.showPicker === 'function') {
+            applyDate.showPicker();
+        }
+
+    });
+
+
+    // 날짜 선택 시 표시 변경
     applyDate.addEventListener(
         'change',
-        updateWeekday
+        updateDateDisplay
     );
+
 
     // 손님 / 용병 선택에 따른 입력 항목 변경
     function updateGuestFields() {
@@ -324,6 +368,7 @@
 
     updateGuestFields();
 
+
     // 디스코드 계정 확인
     if (!discordId) {
 
@@ -336,6 +381,7 @@
         document.getElementById('submitBtn').disabled =
             true;
     }
+
 
     // 지원서 제출
     document.getElementById('applyForm')
@@ -370,8 +416,7 @@
                     .value.trim(),
 
             apply_date:
-                document.getElementById('applyDate')
-                    .value,
+                applyDate.value,
 
             level: isGuest
                 ? Number(levelInput.value)
@@ -412,7 +457,7 @@
                 document.getElementById('applyForm').reset();
 
                 updateGuestFields();
-                updateWeekday();
+                updateDateDisplay();
 
             } else {
 
@@ -438,6 +483,7 @@
             submitBtn.innerText = "제출하기";
         }
     });
+
 </script>
 
 </body>
