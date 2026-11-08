@@ -14,7 +14,7 @@
         }
 
         body {
-            background-color: #1e1f22;
+            background: #1e1f22;
             color: #dbdee1;
             display: flex;
             justify-content: center;
@@ -25,7 +25,7 @@
         }
 
         .card {
-            background-color: #2b2d31;
+            background: #2b2d31;
             padding: 30px;
             border-radius: 12px;
             width: 100%;
@@ -57,7 +57,7 @@
             padding: 12px;
             border-radius: 6px;
             border: 1px solid #1e1f22;
-            background-color: #383a40;
+            background: #383a40;
             color: #fff;
             font-size: 15px;
             outline: none;
@@ -72,7 +72,7 @@
             padding: 14px;
             border: none;
             border-radius: 6px;
-            background-color: #5865f2;
+            background: #5865f2;
             color: #fff;
             font-size: 16px;
             font-weight: bold;
@@ -82,7 +82,7 @@
         }
 
         button:hover {
-            background-color: #4752c4;
+            background: #4752c4;
         }
 
         button:disabled {
@@ -107,7 +107,7 @@
         }
 
         .user-info {
-            background-color: #1e1f22;
+            background: #1e1f22;
             padding: 10px;
             border-radius: 6px;
             font-size: 13px;
@@ -117,7 +117,7 @@
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
         .unit {
@@ -126,10 +126,9 @@
             margin-top: 5px;
         }
 
-        /* 날짜 입력 영역 */
+        /* 날짜 선택 */
         .date-picker-wrap {
             position: relative;
-            width: 100%;
         }
 
         .date-display {
@@ -138,13 +137,17 @@
             padding: 12px;
             border-radius: 6px;
             border: 1px solid #1e1f22;
-            background-color: #383a40;
+            background: #383a40;
             color: #fff;
             font-size: 15px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            pointer-events: none;
+            cursor: pointer;
+        }
+
+        .date-display:hover {
+            border-color: #5865f2;
         }
 
         .date-placeholder {
@@ -152,25 +155,93 @@
         }
 
         .date-icon {
-            flex-shrink: 0;
             color: #dbdee1;
             font-size: 17px;
         }
 
-        .native-date {
+        /* 달력 */
+        .calendar {
             position: absolute;
-            inset: 0;
+            top: calc(100% + 8px);
+            left: 0;
             width: 100%;
-            height: 48px;
-            opacity: 0;
-            cursor: pointer;
-            z-index: 2;
-            padding: 0;
-            border: 0;
+            min-width: 280px;
+            padding: 15px;
+            background: #2b2d31;
+            border: 1px solid #45474e;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+            z-index: 100;
         }
 
-        .date-picker-wrap:focus-within .date-display {
-            border-color: #5865f2;
+        .calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .calendar-header button {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            margin: 0;
+            background: #383a40;
+            font-size: 18px;
+        }
+
+        .calendar-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            text-align: center;
+        }
+
+        .calendar-weekday {
+            padding: 8px 0;
+            font-size: 12px;
+            color: #949ba4;
+            font-weight: bold;
+        }
+
+        .calendar-day {
+            height: 36px;
+            padding: 0;
+            margin: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: #dbdee1;
+            font-size: 13px;
+            font-weight: normal;
+        }
+
+        .calendar-day:hover {
+            background: #45474e;
+        }
+
+        .calendar-day.selected {
+            background: #5865f2;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .calendar-day.today {
+            border: 1px solid #5865f2;
+        }
+
+        .calendar-day.other {
+            color: #666a73;
+        }
+
+        .calendar-day:disabled {
+            opacity: 0.2;
+            cursor: default;
         }
     </style>
 </head>
@@ -186,7 +257,6 @@
 
     <form id="applyForm">
 
-        <!-- 인게임 닉네임 -->
         <div class="form-group">
             <label for="nickname">인게임 닉네임</label>
             <input
@@ -197,7 +267,6 @@
             >
         </div>
 
-        <!-- 구분 -->
         <div class="form-group">
             <label for="roleType">구분</label>
             <select id="roleType" required>
@@ -206,7 +275,6 @@
             </select>
         </div>
 
-        <!-- 손님 전용 항목 -->
         <div id="guestFields">
 
             <div class="form-group">
@@ -241,7 +309,6 @@
 
         </div>
 
-        <!-- 직업 -->
         <div class="form-group">
             <label for="job">직업</label>
             <input
@@ -252,26 +319,43 @@
             >
         </div>
 
-        <!-- 참여 희망 날짜 -->
+        <!-- 날짜 선택 -->
         <div class="form-group">
-            <label for="applyDate">참여 희망 날짜</label>
+            <label>참여 희망 날짜</label>
 
             <div class="date-picker-wrap">
 
-                <div class="date-display">
+                <div
+                    class="date-display"
+                    id="dateDisplay"
+                    tabindex="0"
+                    role="button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                >
                     <span id="dateText" class="date-placeholder">
                         날짜를 선택해주세요
                     </span>
-
                     <span class="date-icon">▦</span>
                 </div>
 
                 <input
-                    type="date"
+                    type="hidden"
                     id="applyDate"
-                    class="native-date"
-                    required
+                    value=""
                 >
+
+                <div id="calendar" class="calendar hidden">
+
+                    <div class="calendar-header">
+                        <button type="button" id="prevMonth">‹</button>
+                        <span id="calendarTitle" class="calendar-title"></span>
+                        <button type="button" id="nextMonth">›</button>
+                    </div>
+
+                    <div class="calendar-grid" id="calendarGrid"></div>
+
+                </div>
 
             </div>
         </div>
@@ -316,6 +400,18 @@
     const dateText =
         document.getElementById('dateText');
 
+    const dateDisplay =
+        document.getElementById('dateDisplay');
+
+    const calendar =
+        document.getElementById('calendar');
+
+    const calendarTitle =
+        document.getElementById('calendarTitle');
+
+    const calendarGrid =
+        document.getElementById('calendarGrid');
+
     const applyForm =
         document.getElementById('applyForm');
 
@@ -325,8 +421,27 @@
     const statusDiv =
         document.getElementById('status');
 
+    const days = [
+        "일", "월", "화", "수", "목", "금", "토"
+    ];
 
-    // 날짜 표시: 2026-11-26 (목)
+    const today = new Date();
+
+    let calendarYear = today.getFullYear();
+    let calendarMonth = today.getMonth();
+
+
+    // 날짜를 YYYY-MM-DD로 변환
+    function formatDate(year, month, day) {
+        return [
+            year,
+            String(month + 1).padStart(2, '0'),
+            String(day).padStart(2, '0')
+        ].join('-');
+    }
+
+
+    // 날짜 표시
     function updateDateDisplay() {
 
         if (!applyDate.value) {
@@ -341,11 +456,6 @@
         const date =
             new Date(year, month - 1, day);
 
-        const days = [
-            "일", "월", "화", "수",
-            "목", "금", "토"
-        ];
-
         dateText.innerText =
             `${applyDate.value} (${days[date.getDay()]})`;
 
@@ -353,14 +463,229 @@
     }
 
 
-    // 날짜 선택 시 요일 갱신
-    applyDate.addEventListener(
-        'change',
-        updateDateDisplay
-    );
+    // 달력 열기
+    function openCalendar() {
+
+        if (applyDate.value) {
+            const [year, month] =
+                applyDate.value.split('-').map(Number);
+
+            calendarYear = year;
+            calendarMonth = month - 1;
+        }
+
+        renderCalendar();
+
+        calendar.classList.remove("hidden");
+
+        dateDisplay.setAttribute(
+            "aria-expanded",
+            "true"
+        );
+    }
 
 
-    // 손님 / 용병 선택에 따른 입력 항목 변경
+    // 달력 닫기
+    function closeCalendar() {
+
+        calendar.classList.add("hidden");
+
+        dateDisplay.setAttribute(
+            "aria-expanded",
+            "false"
+        );
+    }
+
+
+    // 달력 그리기
+    function renderCalendar() {
+
+        calendarTitle.innerText =
+            `${calendarYear}년 ${calendarMonth + 1}월`;
+
+        calendarGrid.innerHTML = "";
+
+        // 요일 표시
+        days.forEach(day => {
+
+            const cell =
+                document.createElement("div");
+
+            cell.className = "calendar-weekday";
+            cell.innerText = day;
+
+            calendarGrid.appendChild(cell);
+        });
+
+        const firstDay =
+            new Date(
+                calendarYear,
+                calendarMonth,
+                1
+            ).getDay();
+
+        const lastDate =
+            new Date(
+                calendarYear,
+                calendarMonth + 1,
+                0
+            ).getDate();
+
+        const previousLastDate =
+            new Date(
+                calendarYear,
+                calendarMonth,
+                0
+            ).getDate();
+
+        // 이전 달 날짜
+        for (let i = 0; i < firstDay; i++) {
+
+            const day =
+                previousLastDate - firstDay + i + 1;
+
+            const cell =
+                document.createElement("button");
+
+            cell.type = "button";
+            cell.className = "calendar-day other";
+            cell.innerText = day;
+            cell.disabled = true;
+
+            calendarGrid.appendChild(cell);
+        }
+
+        // 이번 달 날짜
+        for (let day = 1; day <= lastDate; day++) {
+
+            const cell =
+                document.createElement("button");
+
+            cell.type = "button";
+            cell.className = "calendar-day";
+            cell.innerText = day;
+
+            const dateValue =
+                formatDate(
+                    calendarYear,
+                    calendarMonth,
+                    day
+                );
+
+            if (dateValue === applyDate.value) {
+                cell.classList.add("selected");
+            }
+
+            if (
+                calendarYear === today.getFullYear() &&
+                calendarMonth === today.getMonth() &&
+                day === today.getDate()
+            ) {
+                cell.classList.add("today");
+            }
+
+            cell.addEventListener('click', () => {
+
+                applyDate.value = dateValue;
+
+                updateDateDisplay();
+
+                closeCalendar();
+            });
+
+            calendarGrid.appendChild(cell);
+        }
+
+        // 다음 달 날짜로 빈칸 채우기
+        const totalCells =
+            firstDay + lastDate;
+
+        const remaining =
+            (7 - totalCells % 7) % 7;
+
+        for (let i = 1; i <= remaining; i++) {
+
+            const cell =
+                document.createElement("button");
+
+            cell.type = "button";
+            cell.className = "calendar-day other";
+            cell.innerText = i;
+            cell.disabled = true;
+
+            calendarGrid.appendChild(cell);
+        }
+    }
+
+
+    // 날짜 영역 클릭
+    dateDisplay.addEventListener('click', () => {
+
+        if (calendar.classList.contains("hidden")) {
+            openCalendar();
+        } else {
+            closeCalendar();
+        }
+    });
+
+
+    // 키보드로 달력 열기
+    dateDisplay.addEventListener('keydown', (e) => {
+
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            dateDisplay.click();
+        }
+
+        if (e.key === "Escape") {
+            closeCalendar();
+        }
+    });
+
+
+    // 이전 달
+    document.getElementById('prevMonth')
+        .addEventListener('click', () => {
+
+            calendarMonth--;
+
+            if (calendarMonth < 0) {
+                calendarMonth = 11;
+                calendarYear--;
+            }
+
+            renderCalendar();
+        });
+
+
+    // 다음 달
+    document.getElementById('nextMonth')
+        .addEventListener('click', () => {
+
+            calendarMonth++;
+
+            if (calendarMonth > 11) {
+                calendarMonth = 0;
+                calendarYear++;
+            }
+
+            renderCalendar();
+        });
+
+
+    // 달력 바깥 클릭 시 닫기
+    document.addEventListener('click', (e) => {
+
+        const wrap =
+            document.querySelector('.date-picker-wrap');
+
+        if (!wrap.contains(e.target)) {
+            closeCalendar();
+        }
+    });
+
+
+    // 손님 / 용병 항목 변경
     function updateGuestFields() {
 
         const isGuest =
@@ -387,10 +712,12 @@
     // 디스코드 계정 확인
     if (!discordId) {
 
-        document.getElementById('userInfo').className =
-            "user-info error";
+        const userInfo =
+            document.getElementById('userInfo');
 
-        document.getElementById('userInfo').innerText =
+        userInfo.className = "user-info error";
+
+        userInfo.innerText =
             "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
 
         submitBtn.disabled = true;
@@ -398,104 +725,114 @@
 
 
     // 지원서 제출
-    applyForm.addEventListener(
-        'submit',
-        async (e) => {
+    applyForm.addEventListener('submit', async (e) => {
 
-            e.preventDefault();
+        e.preventDefault();
 
-            if (!discordId) {
-                statusDiv.className = "error";
-                statusDiv.innerText =
-                    "❌ 디스코드 계정 연동을 확인해주세요.";
-                return;
-            }
-
-            const isGuest =
-                roleType.value === "손님";
-
-            submitBtn.disabled = true;
-            submitBtn.innerText = "제출 중...";
-            statusDiv.innerText = "";
-
-            try {
-
-                const formData = {
-                    discord_id: discordId,
-
-                    nickname:
-                        document.getElementById('nickname')
-                            .value.trim(),
-
-                    role_type: roleType.value,
-
-                    job:
-                        document.getElementById('job')
-                            .value.trim(),
-
-                    apply_date:
-                        applyDate.value,
-
-                    level: isGuest
-                        ? Number(levelInput.value)
-                        : null,
-
-                    amount: isGuest
-                        ? Number(amountInput.value)
-                        : null,
-
-                    return_status: isGuest
-                        ? returnInput.value
-                        : null
-                };
-
-                const response = await fetch(
-                    BACKEND_URL,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify(formData)
-                    }
-                );
-
-                const result =
-                    await response.json();
-
-                if (!response.ok) {
-                    throw new Error(
-                        result.detail || "서버 처리 실패"
-                    );
-                }
-
-                statusDiv.className = "success";
-
-                statusDiv.innerText =
-                    result.message || "✅ 지원서 제출 완료!";
-
-                applyForm.reset();
-
-                updateGuestFields();
-                updateDateDisplay();
-
-            } catch (err) {
-
-                console.error("지원서 제출 오류:", err);
-
-                statusDiv.className = "error";
-
-                statusDiv.innerText =
-                    "❌ 제출 실패: " +
-                    (err.message || "서버 연결을 확인해주세요.");
-
-            } finally {
-
-                submitBtn.disabled = false;
-                submitBtn.innerText = "제출하기";
-            }
+        if (!discordId) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 디스코드 계정 연동을 확인해주세요.";
+            return;
         }
-    );
+
+        if (!applyDate.value) {
+
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 참여 희망 날짜를 선택해주세요.";
+
+            openCalendar();
+            return;
+        }
+
+        const isGuest =
+            roleType.value === "손님";
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "제출 중...";
+        statusDiv.innerText = "";
+
+        try {
+
+            const formData = {
+                discord_id: discordId,
+
+                nickname:
+                    document.getElementById('nickname')
+                        .value.trim(),
+
+                role_type: roleType.value,
+
+                job:
+                    document.getElementById('job')
+                        .value.trim(),
+
+                apply_date:
+                    applyDate.value,
+
+                level: isGuest
+                    ? Number(levelInput.value)
+                    : null,
+
+                amount: isGuest
+                    ? Number(amountInput.value)
+                    : null,
+
+                return_status: isGuest
+                    ? returnInput.value
+                    : null
+            };
+
+            const response = await fetch(
+                BACKEND_URL,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(formData)
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "서버 처리 실패"
+                );
+            }
+
+            statusDiv.className = "success";
+
+            statusDiv.innerText =
+                result.message || "✅ 지원서 제출 완료!";
+
+            applyForm.reset();
+
+            updateGuestFields();
+            updateDateDisplay();
+            closeCalendar();
+
+            calendarYear = today.getFullYear();
+            calendarMonth = today.getMonth();
+
+        } catch (err) {
+
+            console.error("지원서 제출 오류:", err);
+
+            statusDiv.className = "error";
+
+            statusDiv.innerText =
+                "❌ 제출 실패: " +
+                (err.message || "서버 연결을 확인해주세요.");
+
+        } finally {
+
+            submitBtn.disabled = false;
+            submitBtn.innerText = "제출하기";
+        }
+    });
 
 </script>
 
