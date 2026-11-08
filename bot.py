@@ -216,34 +216,15 @@ async def process_application(data: ApplyData):
         raise HTTPException(status_code=400, detail="유효하지 않은 역할 타입입니다.")
 
 
-# 버튼 클릭 시 DM 발송
+# DM 없이 버튼 클릭 시 곧바로 웹페이지 링크가 열리도록 수정된 뷰 (Render 서버 깨우기 겸용)
 class ApplyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
-    @discord.ui.button(label="지원서 작성하기", style=discord.ButtonStyle.primary, custom_id="persistent_apply_button")
-    async def apply_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_id = interaction.user.id
-        github_page_url = f"{GITHUB_BASE_URL}?discord_id={user_id}"
-        
-        embed = discord.Embed(
-            title="🍁 메이플랜드 파티 지원 안내",
-            description=(
-                f"⚠️ **주의사항 및 환불/A/S 관련 공지사항을 반드시 읽어주세요!**\n"
-                f"👉 <#{NOTICE_CHANNEL_ID}> 채널 필독\n\n"
-                "공지를 확인하셨다면 아래 버튼을 눌러 지원서를 작성해 주세요."
-            ),
-            color=0xED4245
-        )
-        
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="웹 지원서 작성하기", url=github_page_url, style=discord.ButtonStyle.link))
-        
-        try:
-            await interaction.user.send(embed=embed, view=view)
-            await interaction.response.send_message("📩 DM으로 지원서 링크를 보내드렸습니다!", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ DM 차단이 켜져 있어서 링크를 보낼 수 없습니다. DM을 열어주세요!", ephemeral=True)
+        self.add_item(discord.ui.Button(
+            label="지원서 작성하기", 
+            style=discord.ButtonStyle.link, 
+            url=GITHUB_BASE_URL
+        ))
 
 
 # 패널 생성 명령어 (!패널)
@@ -254,7 +235,7 @@ async def create_panel(ctx):
         title="🍁 메이플랜드 파티 지원서 접수처",
         description=(
             f"⚠️ **환불 및 주의 공지사항은 <#{NOTICE_CHANNEL_ID}> 채널을 꼭 확인해 주세요!**\n\n"
-            "아래 버튼을 누르면 지원서를 작성할 수 있는 링크를 DM으로 보내드립니다."
+            "아래 버튼을 누르면 웹 지원서 작성 페이지가 열립니다."
         ),
         color=0x5865F2
     )
