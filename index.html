@@ -95,6 +95,7 @@
             text-align: center;
             font-size: 14px;
             font-weight: bold;
+            overflow-wrap: anywhere;
         }
 
         .success {
@@ -129,11 +130,14 @@
         .date-picker-wrap {
             position: relative;
             width: 100%;
+            height: 48px;
         }
 
         .date-display {
+            position: absolute;
+            inset: 0;
             width: 100%;
-            min-height: 48px;
+            height: 48px;
             padding: 12px;
             border-radius: 6px;
             border: 1px solid #1e1f22;
@@ -143,11 +147,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            cursor: pointer;
-        }
-
-        .date-display:focus-within {
-            border-color: #5865f2;
+            pointer-events: none;
         }
 
         .date-placeholder {
@@ -157,20 +157,23 @@
         .date-icon {
             flex-shrink: 0;
             color: #dbdee1;
-            font-size: 16px;
+            font-size: 17px;
         }
 
-        /* 실제 달력 입력창은 투명하게 겹침 */
         .native-date {
             position: absolute;
             inset: 0;
             width: 100%;
-            height: 100%;
+            height: 48px;
             opacity: 0;
             cursor: pointer;
             padding: 0;
             border: 0;
             z-index: 2;
+        }
+
+        .date-picker-wrap:focus-within .date-display {
+            border-color: #5865f2;
         }
     </style>
 </head>
@@ -186,6 +189,7 @@
 
     <form id="applyForm">
 
+        <!-- 인게임 닉네임 -->
         <div class="form-group">
             <label for="nickname">인게임 닉네임</label>
             <input
@@ -196,6 +200,7 @@
             >
         </div>
 
+        <!-- 구분 -->
         <div class="form-group">
             <label for="roleType">구분</label>
             <select id="roleType" required>
@@ -204,6 +209,7 @@
             </select>
         </div>
 
+        <!-- 손님 전용 항목 -->
         <div id="guestFields">
 
             <div class="form-group">
@@ -238,6 +244,18 @@
 
         </div>
 
+        <!-- 직업 -->
+        <div class="form-group">
+            <label for="job">직업</label>
+            <input
+                type="text"
+                id="job"
+                placeholder="예: 비숍"
+                required
+            >
+        </div>
+
+        <!-- 참여 희망 날짜 -->
         <div class="form-group">
             <label for="applyDate">참여 희망 날짜</label>
 
@@ -247,6 +265,7 @@
                     <span id="dateText" class="date-placeholder">
                         날짜를 선택해주세요
                     </span>
+
                     <span class="date-icon">▦</span>
                 </div>
 
@@ -300,8 +319,17 @@
     const dateText =
         document.getElementById('dateText');
 
+    const applyForm =
+        document.getElementById('applyForm');
 
-    // 날짜 표시 형식: 2026-11-26 (목)
+    const submitBtn =
+        document.getElementById('submitBtn');
+
+    const statusDiv =
+        document.getElementById('status');
+
+
+    // 날짜 표시: 2026-11-26 (목)
     function updateDateDisplay() {
 
         if (!applyDate.value) {
@@ -328,17 +356,7 @@
     }
 
 
-    // 날짜 입력창 클릭 시 달력 열기
-    applyDate.addEventListener('click', () => {
-
-        if (typeof applyDate.showPicker === 'function') {
-            applyDate.showPicker();
-        }
-
-    });
-
-
-    // 날짜 선택 시 표시 변경
+    // 날짜 선택 시 요일 갱신
     applyDate.addEventListener(
         'change',
         updateDateDisplay
@@ -378,111 +396,110 @@
         document.getElementById('userInfo').innerText =
             "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
 
-        document.getElementById('submitBtn').disabled =
-            true;
+        submitBtn.disabled = true;
     }
 
 
     // 지원서 제출
-    document.getElementById('applyForm')
-        .addEventListener('submit', async (e) => {
+    applyForm.addEventListener(
+        'submit',
+        async (e) => {
 
-        e.preventDefault();
+            e.preventDefault();
 
-        const submitBtn =
-            document.getElementById('submitBtn');
+            if (!discordId) {
+                statusDiv.className = "error";
+                statusDiv.innerText =
+                    "❌ 디스코드 계정 연동을 확인해주세요.";
+                return;
+            }
 
-        const statusDiv =
-            document.getElementById('status');
+            const isGuest =
+                roleType.value === "손님";
 
-        const isGuest =
-            roleType.value === "손님";
+            submitBtn.disabled = true;
+            submitBtn.innerText = "제출 중...";
+            statusDiv.innerText = "";
 
-        submitBtn.disabled = true;
-        submitBtn.innerText = "제출 중...";
-        statusDiv.innerText = "";
+            try {
 
-        const formData = {
-            discord_id: discordId,
+                // 전송 데이터 생성
+                const formData = {
+                    discord_id: discordId,
 
-            nickname:
-                document.getElementById('nickname')
-                    .value.trim(),
+                    nickname:
+                        document.getElementById('nickname')
+                            .value.trim(),
 
-            role_type: roleType.value,
+                    role_type: roleType.value,
 
-            job:
-                document.getElementById('job')
-                    .value.trim(),
+                    job:
+                        document.getElementById('job')
+                            .value.trim(),
 
-            apply_date:
-                applyDate.value,
+                    apply_date:
+                        applyDate.value,
 
-            level: isGuest
-                ? Number(levelInput.value)
-                : null,
+                    level: isGuest
+                        ? Number(levelInput.value)
+                        : null,
 
-            amount: isGuest
-                ? Number(amountInput.value)
-                : null,
+                    amount: isGuest
+                        ? Number(amountInput.value)
+                        : null,
 
-            return_status: isGuest
-                ? returnInput.value
-                : null
-        };
+                    return_status: isGuest
+                        ? returnInput.value
+                        : null
+                };
 
-        try {
-
-            const response = await fetch(
-                BACKEND_URL,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(formData)
-                }
-            );
-
-            if (response.ok) {
+                const response = await fetch(
+                    BACKEND_URL,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(formData)
+                    }
+                );
 
                 const result =
                     await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.detail || "서버 처리 실패"
+                    );
+                }
 
                 statusDiv.className = "success";
 
                 statusDiv.innerText =
                     result.message || "✅ 지원서 제출 완료!";
 
-                document.getElementById('applyForm').reset();
+                applyForm.reset();
 
                 updateGuestFields();
                 updateDateDisplay();
 
-            } else {
+            } catch (err) {
 
-                const errData =
-                    await response.json();
+                console.error("지원서 제출 오류:", err);
 
-                throw new Error(
-                    errData.detail || "서버 처리 실패"
-                );
+                statusDiv.className = "error";
+
+                statusDiv.innerText =
+                    "❌ 제출 실패: " +
+                    (err.message || "서버 연결을 확인해주세요.");
+
+            } finally {
+
+                submitBtn.disabled = false;
+                submitBtn.innerText = "제출하기";
             }
-
-        } catch (err) {
-
-            statusDiv.className = "error";
-
-            statusDiv.innerText =
-                "❌ 제출 실패: " +
-                (err.message || "서버 연결을 확인해주세요.");
-
-        } finally {
-
-            submitBtn.disabled = false;
-            submitBtn.innerText = "제출하기";
         }
-    });
+    );
 
 </script>
 
