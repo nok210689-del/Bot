@@ -3,6 +3,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from urllib.parse import urlencode
+from typing import Optional
 
 import discord
 import uvicorn
@@ -11,7 +12,6 @@ from discord.ext import commands
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from config import (
     TOKEN,
@@ -86,6 +86,7 @@ views_registered = False
 async def refresh_invites(guild):
 
     try:
+
         invites = await guild.invites()
 
         invite_cache[guild.id] = {
@@ -94,8 +95,8 @@ async def refresh_invites(guild):
         }
 
         print(
-            f"[초대 추적] 초대 링크 "
-            f"{len(invites)}개 확인"
+            f"[초대 추적] "
+            f"초대 링크 {len(invites)}개 확인"
         )
 
         return True
@@ -112,6 +113,78 @@ async def refresh_invites(guild):
         print(f"[초대 조회 오류] {e}")
 
     return False
+
+
+# ==========================================
+# 초대 사용 횟수 비교
+# ==========================================
+
+async def detect_used_invite(guild):
+
+    old_invites = invite_cache.get(guild.id)
+
+    if old_invites is None:
+
+        print("[초대 추적] 기존 초대 캐시 없음")
+        return None
+
+    for attempt in range(5):
+
+        try:
+
+            new_invites = await guild.invites()
+
+            current_invites = {
+                invite.code: invite.uses or 0
+                for invite in new_invites
+            }
+
+            used_invites = [
+                invite
+                for invite in new_invites
+                if (invite.uses or 0)
+                > old_invites.get(invite.code, 0)
+            ]
+
+            # 캐시 갱신
+            invite_cache[guild.id] = current_invites
+
+            if len(used_invites) == 1:
+
+                return used_invites[0]
+
+            if len(used_invites) > 1:
+
+                print(
+                    "[초대 추적] "
+                    "여러 초대 링크 사용 감지"
+                )
+
+                return None
+
+            print(
+                f"[초대 추적] "
+                f"사용 횟수 갱신 대기 "
+                f"({attempt + 1}/5)"
+            )
+
+        except discord.Forbidden:
+
+            print(
+                "[초대 추적 오류] "
+                "초대 조회 권한이 없습니다."
+            )
+
+            return None
+
+        except discord.HTTPException as e:
+
+            print(f"[초대 조회 오류] {e}")
+
+        if attempt < 4:
+            await asyncio.sleep(1)
+
+    return None
 
 
 # ==========================================
@@ -191,7 +264,9 @@ async def on_ready():
     guild = bot.get_guild(GUILD_ID)
 
     if guild is not None:
-        await refresh_invites(guild)
+
+        async with invite_lock:
+            await refresh_invites(guild)
 
 
 # ==========================================
@@ -238,6 +313,10 @@ async def on_invite_delete(invite):
 
         cache.pop(invite.code, None)
 
+    print(
+        f"[초대 삭제] {invite.code}"
+    )
+
 
 # ==========================================
 # 멤버 입장 및 초대한 사람 확인
@@ -249,93 +328,58 @@ async def on_member_join(member):
     if member.guild.id != GUILD_ID:
         return
 
+    print(
+        f"[입장 감지] "
+        f"{member} ({member.id})"
+    )
+
     async with invite_lock:
 
-        old_invites = invite_cache.get(
-            member.guild.id
+        used_invite = await detect_used_invite(
+            member.guild
         )
+
+        if used_invite is None:
+
+            print(
+                f"[입장] {member} ({member.id}) "
+                f"- 초대자 확인 불가"
+            )
+
+            return
+
+        inviter = used_invite.inviter
+
+        if inviter is None:
+
+            print(
+                "[초대 추적] 초대 링크 생성자 정보 없음"
+            )
+
+            return
 
         try:
 
-            new_invites = await member.guild.invites()
-
-        except discord.Forbidden:
-
-            print(
-                "[초대 추적 오류] "
-                "초대 조회 권한이 없습니다."
-            )
-            return
-
-        except discord.HTTPException as e:
-
-            print(f"[초대 조회 오류] {e}")
-            return
-
-        current_invites = {
-            invite.code: invite.uses or 0
-            for invite in new_invites
-        }
-
-        # 최초 캐시가 없으면 다음 입장부터 추적
-        if old_invites is None:
-
-            invite_cache[member.guild.id] = (
-                current_invites
+            save_inviter(
+                member.id,
+                inviter.id,
             )
 
             print(
-                f"[입장] {member} "
-                f"- 초대자 확인 불가"
+                f"[초대 기록 완료] "
+                f"입장자: {member} ({member.id})"
             )
-            return
 
-        # 사용 횟수가 증가한 초대 링크 확인
-        used_invites = [
-            invite
-            for invite in new_invites
-            if invite.uses is not None
-            and invite.uses > old_invites.get(
-                invite.code,
-                0,
+            print(
+                f"[초대한 사람] "
+                f"{inviter} ({inviter.id})"
             )
-        ]
 
-        # 다음 입장을 위해 캐시 갱신
-        invite_cache[member.guild.id] = (
-            current_invites
-        )
+        except Exception as e:
 
-        # 정확히 하나의 링크만 증가했을 때 기록
-        if len(used_invites) == 1:
-
-            used_invite = used_invites[0]
-
-            inviter = used_invite.inviter
-
-            if inviter is not None:
-
-                save_inviter(
-                    member.id,
-                    inviter.id,
-                )
-
-                print(
-                    f"[초대 기록] "
-                    f"입장자: {member} ({member.id})"
-                )
-
-                print(
-                    f"[초대한 사람] "
-                    f"{inviter} ({inviter.id})"
-                )
-
-                return
-
-        print(
-            f"[입장] {member} ({member.id}) "
-            f"- 초대자 확인 불가"
-        )
+            print(
+                f"[초대 기록 저장 오류] {e}"
+            )
 
 
 # ==========================================
@@ -346,9 +390,11 @@ async def on_member_join(member):
 async def panel_command(ctx):
 
     if not is_admin(ctx.author):
+
         await ctx.reply(
             "관리자만 사용할 수 있습니다."
         )
+
         return
 
     embed = discord.Embed(
@@ -392,16 +438,20 @@ async def lifespan(app: FastAPI):
     )
 
     try:
+
         yield
 
     finally:
+
         print("[서버] Discord 봇 종료")
 
         await bot.close()
 
         try:
             await bot_task
+
         except Exception as e:
+
             print(f"[종료 오류] {e}")
 
 
