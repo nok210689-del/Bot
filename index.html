@@ -413,6 +413,8 @@
             calendarGrid.appendChild(cell);
         }
 
+        const todayValue = formatDate(today.getFullYear(), today.getMonth(), today.getDate());
+
         for (let day = 1; day <= lastDate; day++) {
             const cell = document.createElement("button");
             cell.type = "button";
@@ -420,6 +422,12 @@
             cell.innerText = day;
 
             const dateValue = formatDate(calendarYear, calendarMonth, day);
+
+            // 오늘보다 이전 날짜인 경우 비활성화
+            if (dateValue < todayValue) {
+                cell.disabled = true;
+                cell.classList.add("other");
+            }
 
             if (dateValue === applyDate.value) {
                 cell.classList.add("selected");
@@ -433,11 +441,13 @@
                 cell.classList.add("today");
             }
 
-            cell.addEventListener('click', () => {
-                applyDate.value = dateValue;
-                updateDateDisplay();
-                closeCalendar();
-            });
+            if (!cell.disabled) {
+                cell.addEventListener('click', () => {
+                    applyDate.value = dateValue;
+                    updateDateDisplay();
+                    closeCalendar();
+                });
+            }
 
             calendarGrid.appendChild(cell);
         }
