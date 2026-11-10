@@ -1,5 +1,9 @@
 
+import os
+import sqlite3
+
 import discord
+
 from datetime import datetime
 
 from config import (
@@ -12,6 +16,82 @@ from reservation import (
     is_admin,
     register_reservation,
 )
+
+
+# ==========================================
+# 초대 기록 데이터베이스
+# ==========================================
+
+DB_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "invite_records.db",
+)
+
+
+def init_invite_db():
+
+    with sqlite3.connect(DB_PATH) as conn:
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS invite_records (
+                member_id INTEGER PRIMARY KEY,
+                inviter_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+
+def save_inviter(member_id, inviter_id):
+
+    try:
+
+        with sqlite3.connect(DB_PATH) as conn:
+
+            conn.execute("""
+                INSERT OR REPLACE INTO invite_records
+                (member_id, inviter_id, created_at)
+                VALUES (?, ?, ?)
+            """, (
+                int(member_id),
+                int(inviter_id),
+                datetime.now().isoformat(),
+            ))
+
+        print(
+            f"[DB 저장] {member_id} -> {inviter_id}"
+        )
+
+    except Exception as e:
+
+        print(f"[초대 기록 저장 오류] {e}")
+
+
+def get_inviter(member_id):
+
+    try:
+
+        with sqlite3.connect(DB_PATH) as conn:
+
+            result = conn.execute("""
+                SELECT inviter_id
+                FROM invite_records
+                WHERE member_id = ?
+            """, (
+                int(member_id),
+            )).fetchone()
+
+        if result:
+            return result[0]
+
+    except Exception as e:
+
+        print(f"[초대 기록 조회 오류] {e}")
+
+    return None
+
+
+# 데이터베이스 초기화
+init_invite_db()
 
 
 # ==========================================
@@ -223,7 +303,6 @@ async def process_application(data):
     if not data.job.strip():
         raise ValueError("직업을 입력해 주세요.")
 
-    # 손님과 용병 모두 레벨 필수
     if data.level is None or not 1 <= data.level <= 300:
         raise ValueError("레벨은 1~300 사이로 입력해 주세요.")
 
@@ -265,10 +344,14 @@ async def process_application(data):
 
         await member.add_roles(role)
 
+        # 손님 Discord ID로 초대자 조회
+        inviter_id = get_inviter(member.id)
+
         success = await register_reservation(
             guild,
             member,
             data,
+            inviter_id=inviter_id,
         )
 
         if not success:
