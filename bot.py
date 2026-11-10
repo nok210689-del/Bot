@@ -111,7 +111,6 @@ async def refresh_invites(guild):
                 else None
             )
 
-            # DB에 초대 생성 정보 저장
             save_invite(
                 guild_id=guild.id,
                 code=invite.code,
@@ -150,7 +149,15 @@ async def refresh_invites(guild):
 @bot.event
 async def on_invite_create(invite):
 
+    print(
+        f"[초대 생성 이벤트 수신] "
+        f"code={invite.code} / "
+        f"guild={invite.guild.id if invite.guild else None} / "
+        f"inviter={invite.inviter}"
+    )
+
     if invite.guild is None:
+        print("[초대 생성 오류] 서버 정보 없음")
         return
 
     inviter_id = (
@@ -159,28 +166,37 @@ async def on_invite_create(invite):
         else None
     )
 
-    async with invite_lock:
-
-        # DB에 생성 즉시 저장
-        save_invite(
-            guild_id=invite.guild.id,
-            code=invite.code,
-            inviter_id=inviter_id,
-            max_uses=invite.max_uses,
-            uses=invite.uses or 0,
-        )
-
-        cache = invite_cache.setdefault(
-            invite.guild.id,
-            {},
-        )
-
-        cache[invite.code] = invite.uses or 0
-
-    print(
-        f"[초대 생성 기록] "
-        f"{invite.inviter} / {invite.code}"
+    success = save_invite(
+        guild_id=invite.guild.id,
+        code=invite.code,
+        inviter_id=inviter_id,
+        max_uses=invite.max_uses,
+        uses=invite.uses or 0,
     )
+
+    if success:
+
+        print(
+            f"[초대 생성 기록 완료] "
+            f"{invite.code} / {inviter_id}"
+        )
+
+        async with invite_lock:
+
+            cache = invite_cache.setdefault(
+                invite.guild.id,
+                {},
+            )
+
+            cache[invite.code] = (
+                invite.uses or 0
+            )
+
+    else:
+
+        print(
+            f"[초대 생성 기록 실패] {invite.code}"
+        )
 
 
 # ==========================================
@@ -439,7 +455,6 @@ async def on_member_join(member):
 
             return
 
-        # 일반 초대 링크 사용 시 입장 기록 저장
         save_inviter(
             member.id,
             inviter_id,
