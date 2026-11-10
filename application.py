@@ -19,7 +19,7 @@ from reservation import (
 
 
 # ==========================================
-# 초대 기록 데이터베이스
+# 데이터베이스 경로
 # ==========================================
 
 DB_PATH = os.path.join(
@@ -28,10 +28,15 @@ DB_PATH = os.path.join(
 )
 
 
+# ==========================================
+# 데이터베이스 초기화
+# ==========================================
+
 def init_invite_db():
 
     with sqlite3.connect(DB_PATH) as conn:
 
+        # 입장자별 초대한 사람 기록
         conn.execute("""
             CREATE TABLE IF NOT EXISTS invite_records (
                 member_id INTEGER PRIMARY KEY,
@@ -40,6 +45,186 @@ def init_invite_db():
             )
         """)
 
+        # 초대 링크 생성 기록
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS invite_links (
+                code TEXT PRIMARY KEY,
+                guild_id INTEGER NOT NULL,
+                inviter_id INTEGER,
+                max_uses INTEGER,
+                uses INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                used_by INTEGER,
+                used_at TEXT
+            )
+        """)
+
+        conn.commit()
+
+
+# ==========================================
+# 초대 링크 생성 기록
+# ==========================================
+
+def save_invite(
+    guild_id,
+    code,
+    inviter_id,
+    max_uses=None,
+    uses=0,
+):
+
+    try:
+
+        with sqlite3.connect(DB_PATH) as conn:
+
+            conn.execute("""
+                INSERT OR REPLACE INTO invite_links (
+                    code,
+                    guild_id,
+                    inviter_id,
+                    max_uses,
+                    uses,
+                    created_at,
+                    used_by,
+                    used_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+            """, (
+                str(code),
+                int(guild_id),
+                int(inviter_id) if inviter_id else None,
+                max_uses,
+                uses or 0,
+                datetime.now().isoformat(),
+            ))
+
+            conn.commit()
+
+        print(
+            f"[초대 DB 저장] "
+            f"{code} / 생성자: {inviter_id}"
+        )
+
+        return True
+
+    except Exception as e:
+
+        print(f"[초대 DB 저장 오류] {e}")
+
+        return False
+
+
+# ==========================================
+# 삭제된 초대 링크 사용 처리
+# ==========================================
+
+def claim_deleted_invite(
+    guild_id,
+    deleted_codes,
+    member_id,
+):
+
+    if not deleted_codes:
+        return None
+
+    try:
+
+        with sqlite3.connect(DB_PATH) as conn:
+
+            conn.execute("BEGIN IMMEDIATE")
+
+            placeholders = ",".join(
+                "?" for _ in deleted_codes
+            )
+
+            query = f"""
+                SELECT code, inviter_id
+                FROM invite_links
+                WHERE guild_id = ?
+                AND code IN ({placeholders})
+                AND inviter_id IS NOT NULL
+                AND used_by IS NULL
+            """
+
+            candidates = conn.execute(
+                query,
+                [int(guild_id)] + list(deleted_codes),
+            ).fetchall()
+
+            # 후보가 정확히 하나일 때만 연결
+            if len(candidates) != 1:
+
+                conn.rollback()
+
+                if len(candidates) > 1:
+                    print(
+                        "[초대 DB] "
+                        "삭제된 초대 링크가 여러 개라 "
+                        "입장자 연결을 보류합니다."
+                    )
+
+                return None
+
+            code, inviter_id = candidates[0]
+
+            now = datetime.now().isoformat()
+
+            # 초대 링크 사용 처리
+            cursor = conn.execute("""
+                UPDATE invite_links
+                SET used_by = ?,
+                    used_at = ?
+                WHERE code = ?
+                AND guild_id = ?
+                AND used_by IS NULL
+            """, (
+                int(member_id),
+                now,
+                code,
+                int(guild_id),
+            ))
+
+            if cursor.rowcount != 1:
+
+                conn.rollback()
+                return None
+
+            # 입장자별 초대한 사람 기록
+            conn.execute("""
+                INSERT OR REPLACE INTO invite_records (
+                    member_id,
+                    inviter_id,
+                    created_at
+                )
+                VALUES (?, ?, ?)
+            """, (
+                int(member_id),
+                int(inviter_id),
+                now,
+            ))
+
+            conn.commit()
+
+        print(
+            f"[초대 DB 연결] "
+            f"{code} / "
+            f"입장자: {member_id} / "
+            f"초대한 사람: {inviter_id}"
+        )
+
+        return int(inviter_id)
+
+    except Exception as e:
+
+        print(f"[초대 DB 연결 오류] {e}")
+
+        return None
+
+
+# ==========================================
+# 입장자 초대 기록 저장
+# ==========================================
 
 def save_inviter(member_id, inviter_id):
 
@@ -57,6 +242,8 @@ def save_inviter(member_id, inviter_id):
                 datetime.now().isoformat(),
             ))
 
+            conn.commit()
+
         print(
             f"[DB 저장] {member_id} -> {inviter_id}"
         )
@@ -65,6 +252,10 @@ def save_inviter(member_id, inviter_id):
 
         print(f"[초대 기록 저장 오류] {e}")
 
+
+# ==========================================
+# 입장자 초대 기록 조회
+# ==========================================
 
 def get_inviter(member_id):
 
