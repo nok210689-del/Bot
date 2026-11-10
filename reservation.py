@@ -64,10 +64,10 @@ class ReservationView(discord.ui.View):
 
         content = message.content
 
-        # 현재 예약 상태 확인
-        is_confirmed = "상태 : ✅ 예약완료" in content
+        is_confirmed = (
+            "상태 : ✅ 예약완료" in content
+        )
 
-        # 신청자 디스코드 ID 추출
         match = re.search(
             r"디코아이디\s*:\s*<@!?(\d+)>",
             content,
@@ -172,7 +172,12 @@ class ReservationView(discord.ui.View):
 # 예약현황 등록
 # ==========================================
 
-async def register_reservation(guild, member, data):
+async def register_reservation(
+    guild,
+    member,
+    data,
+    inviter_id=None,
+):
 
     channel = guild.get_channel(
         RESERVATION_CHANNEL_ID
@@ -190,6 +195,7 @@ async def register_reservation(guild, member, data):
         return False
 
     try:
+
         apply_date = datetime.strptime(
             data.apply_date,
             "%Y-%m-%d",
@@ -199,7 +205,35 @@ async def register_reservation(guild, member, data):
             "%Y-%m-%d"
         )
 
-        return_text = f"반납 : {data.return_status}"
+        # 반납 / 미반납
+        return_text = data.return_status
+
+        # 금액 만 단위
+        amount_text = f"{data.amount // 10000:,}만"
+
+        # 초대한 사람 확인
+        if inviter_id is not None:
+
+            inviter = guild.get_member(
+                inviter_id
+            )
+
+            if inviter is None:
+                try:
+                    inviter = await guild.fetch_member(
+                        inviter_id
+                    )
+                except discord.HTTPException:
+                    inviter = None
+
+            inviter_text = (
+                f"<@{inviter_id}>"
+                if inviter is not None
+                else f"<@{inviter_id}> (서버 미가입)"
+            )
+
+        else:
+            inviter_text = "확인 불가"
 
         content = (
             f"**{date_text}**\n\n"
@@ -207,8 +241,9 @@ async def register_reservation(guild, member, data):
             f"{data.nickname} / "
             f"{data.level} / "
             f"{data.job} / "
-            f"{data.amount:,}\n\n"
+            f"{amount_text}\n\n"
             f"디코아이디 : {member.mention}\n"
+            f"초대한 사람 : {inviter_text}\n"
             f"상태 : ⏳ 예약대기"
         )
 
