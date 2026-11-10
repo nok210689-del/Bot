@@ -149,12 +149,29 @@
         }
 
         .date-placeholder {
-            color: #949ba4;
+            color: #fEE75C; /* 눈에 띄는 노란빛 톤으로 작성일 아님을 강조 */
+            font-weight: 500;
         }
 
         .date-icon {
             color: #dbdee1;
             font-size: 17px;
+        }
+
+        /* 에러 시 흔들림 애니메이션 */
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            20% { transform: translateX(-6px); }
+            40% { transform: translateX(6px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
+            100% { transform: translateX(0); }
+        }
+
+        .error-highlight {
+            border-color: #f23f43 !important;
+            animation: shake 0.4s ease-in-out;
+            background: rgba(242, 63, 67, 0.1) !important;
         }
 
         /* 달력 */
@@ -296,12 +313,12 @@
 
         <!-- 날짜 선택 -->
         <div class="form-group">
-            <label>참여 희망 날짜</label>
+            <label>참여 희망 날짜 <span style="color: #fEE75C; font-size: 12px; font-weight: normal;">(※ 작성일이 아닌 파티 참여일 선택)</span></label>
 
             <div class="date-picker-wrap">
                 <div class="date-display" id="dateDisplay" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false">
-                    <span id="dateText" class="date-placeholder">날짜를 선택해주세요</span>
-                    <span class="date-icon">▦</span>
+                    <span id="dateText" class="date-placeholder">👉 클릭해서 참여할 날짜를 직접 선택하세요</span>
+                    <span class="date-icon">📅</span>
                 </div>
 
                 <input type="hidden" id="applyDate" value="">
@@ -360,7 +377,7 @@
 
     function updateDateDisplay() {
         if (!applyDate.value) {
-            dateText.innerText = "날짜를 선택해주세요";
+            dateText.innerText = "👉 클릭해서 참여할 날짜를 직접 선택하세요";
             dateText.classList.add("date-placeholder");
             return;
         }
@@ -368,7 +385,7 @@
         const [year, month, day] = applyDate.value.split('-').map(Number);
         const date = new Date(year, month - 1, day);
 
-        dateText.innerText = `${applyDate.value} (${days[date.getDay()]})`;
+        dateText.innerText = `${applyDate.value} (${days[date.getDay()]}) 참여`;
         dateText.classList.remove("date-placeholder");
     }
 
@@ -542,7 +559,14 @@
 
         if (!applyDate.value) {
             statusDiv.className = "error";
-            statusDiv.innerText = "❌ 참여 희망 날짜를 선택해주세요.";
+            statusDiv.innerText = "❌ [필수] 작성일이 아닙니다! 파티에 참여할 희망 날짜를 선택해주세요.";
+            
+            // 시각적 강조 효과 (흔들림 및 테두리 붉게)
+            dateDisplay.classList.add("error-highlight");
+            setTimeout(() => {
+                dateDisplay.classList.remove("error-highlight");
+            }, 400);
+
             openCalendar();
             return;
         }
