@@ -209,7 +209,7 @@ async def register_reservation(
         return_text = data.return_status
 
         # 금액 만 단위
-        amount_text = f"{data.amount // 10000:,}만"
+        amount_text = f"{data.amount:,}만"
 
         # 초대한 사람 확인
         if inviter_id is not None:
