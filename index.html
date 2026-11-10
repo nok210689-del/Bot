@@ -149,7 +149,7 @@
         }
 
         .date-placeholder {
-            color: #fEE75C; /* 눈에 띄는 노란빛 톤으로 작성일 아님을 강조 */
+            color: #fEE75C;
             font-weight: 500;
         }
 
@@ -561,7 +561,6 @@
             statusDiv.className = "error";
             statusDiv.innerText = "❌ [필수] 작성일이 아닙니다! 파티에 참여할 희망 날짜를 선택해주세요.";
             
-            // 시각적 강조 효과 (흔들림 및 테두리 붉게)
             dateDisplay.classList.add("error-highlight");
             setTimeout(() => {
                 dateDisplay.classList.remove("error-highlight");
