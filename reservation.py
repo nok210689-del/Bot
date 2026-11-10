@@ -7,6 +7,7 @@ import discord
 from config import (
     RESERVATION_CHANNEL_ID,
     ADMIN_ROLE_IDS,
+    NOTICE_CHANNEL_ID,
 )
 
 
@@ -15,6 +16,7 @@ from config import (
 # ==========================================
 
 def is_admin(member):
+
     if not isinstance(member, discord.Member):
         return False
 
@@ -25,30 +27,24 @@ def is_admin(member):
 
 
 # ==========================================
-# 예약 확정 / 취소 버튼
+# 예약현황 버튼
 # ==========================================
 
 class ReservationView(discord.ui.View):
 
-    def __init__(self, confirmed=False):
+    def __init__(self):
         super().__init__(timeout=None)
 
-        self.confirmed = confirmed
-
-        button = discord.ui.Button(
-            label="예약 취소" if confirmed else "예약 확정",
-            style=(
-                discord.ButtonStyle.danger
-                if confirmed
-                else discord.ButtonStyle.success
-            ),
-            custom_id="reservation_toggle",
-        )
-
-        button.callback = self.toggle_callback
-        self.add_item(button)
-
-    async def toggle_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(
+        label="예약 확정",
+        style=discord.ButtonStyle.success,
+        custom_id="reservation_toggle",
+    )
+    async def reservation_toggle(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
 
         if not is_admin(interaction.user):
             await interaction.response.send_message(
@@ -61,14 +57,20 @@ class ReservationView(discord.ui.View):
 
         if message is None:
             await interaction.response.send_message(
-                "예약 메시지를 찾을 수 없습니다.",
+                "예약현황 메시지를 찾을 수 없습니다.",
                 ephemeral=True,
             )
             return
 
+        content = message.content
+
+        # 현재 예약 상태 확인
+        is_confirmed = "상태 : ✅ 예약완료" in content
+
+        # 신청자 디스코드 ID 추출
         match = re.search(
             r"디코아이디\s*:\s*<@!?(\d+)>",
-            message.content,
+            content,
         )
 
         if not match:
@@ -80,66 +82,101 @@ class ReservationView(discord.ui.View):
 
         user_id = int(match.group(1))
 
-        confirmed = not self.confirmed
+        guild = interaction.guild
 
-        status_text = (
-            "상태 : ✅ 예약완료"
-            if confirmed
-            else "상태 : ⏳ 예약대기"
+        if guild is None:
+            await interaction.response.send_message(
+                "서버 정보를 찾을 수 없습니다.",
+                ephemeral=True,
+            )
+            return
+
+        member = guild.get_member(user_id)
+
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except discord.HTTPException:
+                member = None
+
+        # ==================================
+        # 예약 취소
+        # ==================================
+
+        if is_confirmed:
+
+            content = content.replace(
+                "상태 : ✅ 예약완료",
+                "상태 : ⏳ 예약대기",
+            )
+
+            button.label = "예약 확정"
+            button.style = discord.ButtonStyle.success
+
+            await interaction.response.edit_message(
+                content=content,
+                view=self,
+            )
+
+            if member is not None:
+                try:
+                    await member.send(
+                        "⚠️ **예약이 취소되었습니다.**\n\n"
+                        "예약 상태가 변경되었습니다.\n"
+                        "자세한 내용은 공대 관리자에게 문의해 주세요."
+                    )
+                except discord.HTTPException:
+                    pass
+
+            return
+
+        # ==================================
+        # 예약 확정
+        # ==================================
+
+        content = content.replace(
+            "상태 : ⏳ 예약대기",
+            "상태 : ✅ 예약완료",
         )
 
-        content = re.sub(
-            r"상태\s*:\s*.*",
-            status_text,
-            message.content,
-        )
+        button.label = "예약 취소"
+        button.style = discord.ButtonStyle.danger
 
         await interaction.response.edit_message(
             content=content,
-            view=ReservationView(confirmed=confirmed),
+            view=self,
         )
 
-        try:
-            user = interaction.client.get_user(user_id)
+        if member is not None:
 
-            if user is None:
-                user = await interaction.client.fetch_user(user_id)
-
-            if confirmed:
-                dm_text = (
-                    "✅ 예약이 확정되었습니다!\n"
-                    "예약현황을 확인해 주세요."
-                )
-            else:
-                dm_text = (
-                    "⏳ 예약이 취소되었습니다.\n"
-                    "자세한 내용은 공대 관리자에게 문의해 주세요."
+            try:
+                await member.send(
+                    "🎉 **예약이 확정되었습니다!**\n\n"
+                    "신청해 주셔서 감사합니다.\n\n"
+                    "📢 원활한 공대 진행을 위해 공지사항과 "
+                    "환불 및 주의사항을 다시 한번 확인해 주세요.\n\n"
+                    "당일 늦지 않게 참여 부탁드립니다.\n\n"
+                    "감사합니다!"
                 )
 
-            await user.send(dm_text)
-
-        except discord.HTTPException:
-            pass
-
-        result_text = (
-            "예약을 확정했습니다."
-            if confirmed
-            else "예약을 취소했습니다."
-        )
+            except discord.HTTPException:
+                pass
 
         await interaction.followup.send(
-            result_text,
+            "예약을 확정했습니다.",
             ephemeral=True,
         )
 
 
 # ==========================================
-# 예약 등록
+# 예약현황 등록
 # ==========================================
 
 async def register_reservation(guild, member, data):
 
-    channel = guild.get_channel(RESERVATION_CHANNEL_ID)
+    channel = guild.get_channel(
+        RESERVATION_CHANNEL_ID
+    )
 
     if channel is None:
         try:
@@ -158,14 +195,11 @@ async def register_reservation(guild, member, data):
             "%Y-%m-%d",
         )
 
-        date_text = (
-            f"{apply_date.month}/{apply_date.day} "
-            f"({['월', '화', '수', '목', '금', '토', '일'][apply_date.weekday()]})"
+        date_text = apply_date.strftime(
+            "%Y-%m-%d"
         )
 
-        return_text = (
-            f"반납 : {data.return_status}"
-        )
+        return_text = f"반납 : {data.return_status}"
 
         content = (
             f"**{date_text}**\n\n"
@@ -174,12 +208,12 @@ async def register_reservation(guild, member, data):
             f"{data.level} / "
             f"{data.job} / "
             f"{data.amount:,}\n\n"
-            f"디코아이디 : <@{member.id}>\n\n"
+            f"디코아이디 : {member.mention}\n"
             f"상태 : ⏳ 예약대기"
         )
 
         await channel.send(
-            content,
+            content=content,
             view=ReservationView(),
             allowed_mentions=discord.AllowedMentions(
                 users=True,
@@ -190,5 +224,8 @@ async def register_reservation(guild, member, data):
 
         return True
 
-    except (ValueError, discord.HTTPException):
+    except Exception as e:
+
+        print(f"[예약현황 등록 오류] {e}")
+
         return False
