@@ -31,6 +31,8 @@ from application import (
     set_bot,
     process_application,
     save_inviter,
+    save_invite,
+    claim_deleted_invite,
 )
 
 
@@ -78,16 +80,7 @@ set_bot(bot)
 # 초대 기록 캐시
 # ==========================================
 
-# 현재 초대 링크 사용 횟수
 invite_cache = {}
-
-# 생성된 초대 링크 정보
-# code: {
-#     inviter_id: 초대한 사람 ID,
-#     uses: 생성 당시 사용 횟수,
-#     created_at: 생성 시각
-# }
-invite_info = {}
 
 invite_lock = asyncio.Lock()
 
@@ -118,14 +111,14 @@ async def refresh_invites(guild):
                 else None
             )
 
-            # 기존 초대 정보는 유지
-            if invite.code not in invite_info:
-
-                invite_info[invite.code] = {
-                    "inviter_id": inviter_id,
-                    "uses": invite.uses or 0,
-                    "created_at": time.time(),
-                }
+            # DB에 초대 생성 정보 저장
+            save_invite(
+                guild_id=guild.id,
+                code=invite.code,
+                inviter_id=inviter_id,
+                max_uses=invite.max_uses,
+                uses=invite.uses or 0,
+            )
 
         invite_cache[guild.id] = current
 
@@ -160,19 +153,22 @@ async def on_invite_create(invite):
     if invite.guild is None:
         return
 
+    inviter_id = (
+        invite.inviter.id
+        if invite.inviter
+        else None
+    )
+
     async with invite_lock:
 
-        inviter_id = (
-            invite.inviter.id
-            if invite.inviter
-            else None
+        # DB에 생성 즉시 저장
+        save_invite(
+            guild_id=invite.guild.id,
+            code=invite.code,
+            inviter_id=inviter_id,
+            max_uses=invite.max_uses,
+            uses=invite.uses or 0,
         )
-
-        invite_info[invite.code] = {
-            "inviter_id": inviter_id,
-            "uses": invite.uses or 0,
-            "created_at": time.time(),
-        }
 
         cache = invite_cache.setdefault(
             invite.guild.id,
@@ -182,7 +178,7 @@ async def on_invite_create(invite):
         cache[invite.code] = invite.uses or 0
 
     print(
-        f"[초대 생성] "
+        f"[초대 생성 기록] "
         f"{invite.inviter} / {invite.code}"
     )
 
@@ -199,7 +195,6 @@ async def on_invite_delete(invite):
 
     async with invite_lock:
 
-        # 초대 정보는 삭제하지 않고 보관
         cache = invite_cache.get(
             invite.guild.id,
             {},
@@ -209,7 +204,7 @@ async def on_invite_delete(invite):
 
     print(
         f"[초대 삭제] {invite.code} "
-        "- 초대 정보 보존"
+        "- DB 기록 보존"
     )
 
 
@@ -217,9 +212,12 @@ async def on_invite_delete(invite):
 # 초대자 확인
 # ==========================================
 
-async def detect_used_invite(guild):
+async def detect_used_invite(guild, member_id):
 
-    old_invites = invite_cache.get(guild.id, {})
+    old_invites = invite_cache.get(
+        guild.id,
+        {},
+    ).copy()
 
     for attempt in range(5):
 
@@ -240,6 +238,7 @@ async def detect_used_invite(guild):
                 > old_invites.get(invite.code, 0)
             ]
 
+            # 일반 초대 링크 사용
             if len(used_invites) == 1:
 
                 used = used_invites[0]
@@ -250,10 +249,12 @@ async def detect_used_invite(guild):
                     else None
                 )
 
-                # 캐시 갱신
-                invite_cache[guild.id] = current_invites
+                invite_cache[guild.id] = (
+                    current_invites
+                )
 
                 if inviter_id is not None:
+
                     return inviter_id
 
             elif len(used_invites) > 1:
@@ -263,43 +264,42 @@ async def detect_used_invite(guild):
                     "여러 초대 링크 사용 감지"
                 )
 
-                invite_cache[guild.id] = current_invites
+                invite_cache[guild.id] = (
+                    current_invites
+                )
+
                 return None
 
-            # 사라진 1회용 초대 링크 확인
+            # 삭제된 1회용 초대 링크 확인
             deleted_codes = (
                 set(old_invites)
                 - set(current_invites)
             )
 
-            deleted_candidates = []
+            if deleted_codes:
 
-            for code in deleted_codes:
-
-                info = invite_info.get(code)
-
-                if info is None:
-                    continue
-
-                inviter_id = info.get("inviter_id")
-
-                if inviter_id is not None:
-                    deleted_candidates.append(
-                        inviter_id
-                    )
-
-            if len(deleted_candidates) == 1:
-
-                invite_cache[guild.id] = current_invites
-
-                print(
-                    "[초대 추적] "
-                    "삭제된 1회용 초대 링크 확인"
+                inviter_id = claim_deleted_invite(
+                    guild.id,
+                    list(deleted_codes),
+                    member_id,
                 )
 
-                return deleted_candidates[0]
+                if inviter_id is not None:
 
-            invite_cache[guild.id] = current_invites
+                    invite_cache[guild.id] = (
+                        current_invites
+                    )
+
+                    print(
+                        "[초대 추적] "
+                        "삭제된 초대 링크와 입장자 연결 성공"
+                    )
+
+                    return inviter_id
+
+            invite_cache[guild.id] = (
+                current_invites
+            )
 
             print(
                 f"[초대 추적] "
@@ -426,7 +426,8 @@ async def on_member_join(member):
     async with invite_lock:
 
         inviter_id = await detect_used_invite(
-            member.guild
+            member.guild,
+            member.id,
         )
 
         if inviter_id is None:
@@ -438,31 +439,24 @@ async def on_member_join(member):
 
             return
 
-        try:
+        # 일반 초대 링크 사용 시 입장 기록 저장
+        save_inviter(
+            member.id,
+            inviter_id,
+        )
 
-            save_inviter(
-                member.id,
-                inviter_id,
-            )
+        inviter = bot.get_user(inviter_id)
 
-            inviter = bot.get_user(inviter_id)
+        print(
+            f"[초대 기록 완료] "
+            f"입장자: {member} ({member.id})"
+        )
 
-            print(
-                f"[초대 기록 완료] "
-                f"입장자: {member} ({member.id})"
-            )
-
-            print(
-                f"[초대한 사람] "
-                f"{inviter or inviter_id}"
-                f" ({inviter_id})"
-            )
-
-        except Exception as e:
-
-            print(
-                f"[초대 기록 저장 오류] {e}"
-            )
+        print(
+            f"[초대한 사람] "
+            f"{inviter or inviter_id} "
+            f"({inviter_id})"
+        )
 
 
 # ==========================================
