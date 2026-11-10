@@ -246,7 +246,6 @@ async def detect_used_invite(guild, member_id):
                 for invite in new_invites
             }
 
-            # 사용 횟수가 증가한 링크 확인
             used_invites = [
                 invite
                 for invite in new_invites
@@ -254,7 +253,6 @@ async def detect_used_invite(guild, member_id):
                 > old_invites.get(invite.code, 0)
             ]
 
-            # 일반 초대 링크 사용
             if len(used_invites) == 1:
 
                 used = used_invites[0]
@@ -270,7 +268,6 @@ async def detect_used_invite(guild, member_id):
                 )
 
                 if inviter_id is not None:
-
                     return inviter_id
 
             elif len(used_invites) > 1:
@@ -286,7 +283,6 @@ async def detect_used_invite(guild, member_id):
 
                 return None
 
-            # 삭제된 1회용 초대 링크 확인
             deleted_codes = (
                 set(old_invites)
                 - set(current_invites)
@@ -402,8 +398,35 @@ async def on_ready():
     global views_registered
 
     print("=" * 40)
+
+    print(
+        f"[Discord.py 버전] "
+        f"{discord.__version__}"
+    )
+
+    print(
+        f"[초대 인텐트 활성화] "
+        f"{bot.intents.invites}"
+    )
+
+    print(
+        f"[멤버 인텐트 활성화] "
+        f"{bot.intents.members}"
+    )
+
+    print(
+        f"[Gateway 인텐트 값] "
+        f"{bot.intents.value}"
+    )
+
+    print(
+        f"[초대 이벤트 핸들러 등록] "
+        f"{callable(getattr(bot, 'on_invite_create', None))}"
+    )
+
     print(f"Discord 로그인 완료: {bot.user}")
     print(f"서버 ID: {GUILD_ID}")
+
     print("=" * 40)
 
     if not views_registered:
