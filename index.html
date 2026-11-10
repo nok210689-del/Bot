@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -285,15 +286,30 @@
             </select>
         </div>
 
+        <!-- 손님 / 용병 공통 레벨 -->
+        <div class="form-group">
+            <label for="level">레벨</label>
+            <input
+                type="number"
+                id="level"
+                placeholder="예: 123"
+                min="1"
+                max="300"
+                required
+            >
+        </div>
+
+        <!-- 손님 전용 항목 -->
         <div id="guestFields">
-            <div class="form-group">
-                <label for="level">레벨</label>
-                <input type="number" id="level" placeholder="예: 123" min="1" max="300">
-            </div>
 
             <div class="form-group">
                 <label for="amount">가격</label>
-                <input type="number" id="amount" placeholder="예: 4000" min="0">
+                <input
+                    type="number"
+                    id="amount"
+                    placeholder="예: 4000"
+                    min="0"
+                >
                 <div class="unit">단위: 만 메소</div>
             </div>
 
@@ -304,6 +320,7 @@
                     <option value="미반납">미반납</option>
                 </select>
             </div>
+
         </div>
 
         <div class="form-group">
@@ -313,11 +330,25 @@
 
         <!-- 날짜 선택 -->
         <div class="form-group">
-            <label>참여 희망 날짜 <span style="color: #fEE75C; font-size: 12px; font-weight: normal;">(※ 작성일이 아닌 파티 참여일 선택)</span></label>
+            <label>
+                참여 희망 날짜
+                <span style="color: #fEE75C; font-size: 12px; font-weight: normal;">
+                    (※ 작성일이 아닌 파티 참여일 선택)
+                </span>
+            </label>
 
             <div class="date-picker-wrap">
-                <div class="date-display" id="dateDisplay" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false">
-                    <span id="dateText" class="date-placeholder">👉 클릭해서 참여할 날짜를 직접 선택하세요</span>
+                <div
+                    class="date-display"
+                    id="dateDisplay"
+                    tabindex="0"
+                    role="button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                >
+                    <span id="dateText" class="date-placeholder">
+                        👉 클릭해서 참여할 날짜를 직접 선택하세요
+                    </span>
                     <span class="date-icon">📅</span>
                 </div>
 
@@ -395,6 +426,7 @@
             calendarYear = year;
             calendarMonth = month - 1;
         }
+
         renderCalendar();
         calendar.classList.remove("hidden");
         dateDisplay.setAttribute("aria-expanded", "true");
@@ -430,7 +462,11 @@
             calendarGrid.appendChild(cell);
         }
 
-        const todayValue = formatDate(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayValue = formatDate(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate()
+        );
 
         for (let day = 1; day <= lastDate; day++) {
             const cell = document.createElement("button");
@@ -438,7 +474,11 @@
             cell.className = "calendar-day";
             cell.innerText = day;
 
-            const dateValue = formatDate(calendarYear, calendarMonth, day);
+            const dateValue = formatDate(
+                calendarYear,
+                calendarMonth,
+                day
+            );
 
             // 오늘보다 이전 날짜인 경우 비활성화
             if (dateValue < todayValue) {
@@ -484,6 +524,7 @@
 
     dateDisplay.addEventListener('click', (e) => {
         e.stopPropagation();
+
         if (calendar.classList.contains("hidden")) {
             openCalendar();
         } else {
@@ -500,6 +541,7 @@
             e.preventDefault();
             dateDisplay.click();
         }
+
         if (e.key === "Escape") {
             closeCalendar();
         }
@@ -507,24 +549,29 @@
 
     document.getElementById('prevMonth').addEventListener('click', () => {
         calendarMonth--;
+
         if (calendarMonth < 0) {
             calendarMonth = 11;
             calendarYear--;
         }
+
         renderCalendar();
     });
 
     document.getElementById('nextMonth').addEventListener('click', () => {
         calendarMonth++;
+
         if (calendarMonth > 11) {
             calendarMonth = 0;
             calendarYear++;
         }
+
         renderCalendar();
     });
 
     document.addEventListener('click', (e) => {
         const wrap = document.querySelector('.date-picker-wrap');
+
         if (!wrap.contains(e.target)) {
             closeCalendar();
         }
@@ -532,8 +579,13 @@
 
     function updateGuestFields() {
         const isGuest = roleType.value === "손님";
+
         guestFields.classList.toggle("hidden", !isGuest);
-        levelInput.required = isGuest;
+
+        // 레벨은 손님과 용병 모두 필수
+        levelInput.required = true;
+
+        // 가격과 반납 여부는 손님만 필수
         amountInput.required = isGuest;
         returnInput.required = isGuest;
     }
@@ -544,7 +596,9 @@
     if (!discordId) {
         const userInfo = document.getElementById('userInfo');
         userInfo.className = "user-info error";
-        userInfo.innerText = "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
+        userInfo.innerText =
+            "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
+
         submitBtn.disabled = true;
     }
 
@@ -553,15 +607,18 @@
 
         if (!discordId) {
             statusDiv.className = "error";
-            statusDiv.innerText = "❌ 디스코드 계정 연동을 확인해주세요.";
+            statusDiv.innerText =
+                "❌ 디스코드 계정 연동을 확인해주세요.";
             return;
         }
 
         if (!applyDate.value) {
             statusDiv.className = "error";
-            statusDiv.innerText = "❌ [필수] 작성일이 아닙니다! 파티에 참여할 희망 날짜를 선택해주세요.";
-            
+            statusDiv.innerText =
+                "❌ [필수] 작성일이 아닙니다! 파티에 참여할 희망 날짜를 선택해주세요.";
+
             dateDisplay.classList.add("error-highlight");
+
             setTimeout(() => {
                 dateDisplay.classList.remove("error-highlight");
             }, 400);
@@ -583,7 +640,11 @@
                 role_type: roleType.value,
                 job: document.getElementById('job').value.trim(),
                 apply_date: applyDate.value,
-                level: isGuest ? Number(levelInput.value) : null,
+
+                // 손님과 용병 모두 레벨 전송
+                level: Number(levelInput.value),
+
+                // 가격과 반납 여부는 손님만 전송
                 amount: isGuest ? Number(amountInput.value) : null,
                 return_status: isGuest ? returnInput.value : null
             };
@@ -603,7 +664,8 @@
             }
 
             statusDiv.className = "success";
-            statusDiv.innerText = result.message || "✅ 지원서 제출 완료!";
+            statusDiv.innerText =
+                result.message || "✅ 지원서 제출 완료!";
 
             applyForm.reset();
             updateGuestFields();
@@ -615,8 +677,12 @@
 
         } catch (err) {
             console.error("지원서 제출 오류:", err);
+
             statusDiv.className = "error";
-            statusDiv.innerText = "❌ 제출 실패: " + (err.message || "서버 연결을 확인해주세요.");
+            statusDiv.innerText =
+                "❌ 제출 실패: " +
+                (err.message || "서버 연결을 확인해주세요.");
+
         } finally {
             submitBtn.disabled = false;
             submitBtn.innerText = "제출하기";
