@@ -28,6 +28,7 @@ from reservation import (
 from application import (
     set_bot,
     process_application,
+    save_inviter,
 )
 
 
@@ -43,10 +44,8 @@ class ApplyData(BaseModel):
     job: str
     apply_date: str
 
-    # 손님 / 용병 공통 필수
     level: int = Field(ge=1, le=300)
 
-    # 손님만 사용
     amount: Optional[int] = Field(
         default=None,
         ge=0,
@@ -63,14 +62,56 @@ intents = discord.Intents.default()
 
 intents.members = True
 intents.message_content = True
+intents.invites = True
 
 bot = commands.Bot(
     command_prefix="!",
     intents=intents,
 )
 
-# application.py에 봇 연결
 set_bot(bot)
+
+
+# ==========================================
+# 초대 기록 캐시
+# ==========================================
+
+invite_cache = {}
+
+invite_lock = asyncio.Lock()
+
+views_registered = False
+
+
+async def refresh_invites(guild):
+
+    try:
+        invites = await guild.invites()
+
+        invite_cache[guild.id] = {
+            invite.code: invite.uses or 0
+            for invite in invites
+        }
+
+        print(
+            f"[초대 추적] 초대 링크 "
+            f"{len(invites)}개 확인"
+        )
+
+        return True
+
+    except discord.Forbidden:
+
+        print(
+            "[초대 추적 오류] "
+            "서버 관리 권한이 필요합니다."
+        )
+
+    except discord.HTTPException as e:
+
+        print(f"[초대 조회 오류] {e}")
+
+    return False
 
 
 # ==========================================
@@ -130,24 +171,171 @@ class ApplyView(discord.ui.View):
 @bot.event
 async def on_ready():
 
+    global views_registered
+
     print("=" * 40)
     print(f"Discord 로그인 완료: {bot.user}")
     print(f"서버 ID: {GUILD_ID}")
     print("=" * 40)
 
+    if not views_registered:
+
+        bot.add_view(ApplyView())
+        bot.add_view(ReservationView())
+
+        views_registered = True
+
+        print("[완료] 지원서 버튼 등록")
+        print("[완료] 예약현황 버튼 등록")
+
+    guild = bot.get_guild(GUILD_ID)
+
+    if guild is not None:
+        await refresh_invites(guild)
+
 
 # ==========================================
-# Persistent View 등록
+# 새 초대 링크 생성 감지
 # ==========================================
 
 @bot.event
-async def setup_hook():
+async def on_invite_create(invite):
 
-    bot.add_view(ApplyView())
-    bot.add_view(ReservationView())
+    if invite.guild is None:
+        return
 
-    print("[완료] 지원서 버튼 등록")
-    print("[완료] 예약현황 버튼 등록")
+    async with invite_lock:
+
+        cache = invite_cache.setdefault(
+            invite.guild.id,
+            {},
+        )
+
+        cache[invite.code] = invite.uses or 0
+
+    print(
+        f"[초대 생성] "
+        f"{invite.inviter} / {invite.code}"
+    )
+
+
+# ==========================================
+# 초대 링크 삭제 감지
+# ==========================================
+
+@bot.event
+async def on_invite_delete(invite):
+
+    if invite.guild is None:
+        return
+
+    async with invite_lock:
+
+        cache = invite_cache.get(
+            invite.guild.id,
+            {},
+        )
+
+        cache.pop(invite.code, None)
+
+
+# ==========================================
+# 멤버 입장 및 초대한 사람 확인
+# ==========================================
+
+@bot.event
+async def on_member_join(member):
+
+    if member.guild.id != GUILD_ID:
+        return
+
+    async with invite_lock:
+
+        old_invites = invite_cache.get(
+            member.guild.id
+        )
+
+        try:
+
+            new_invites = await member.guild.invites()
+
+        except discord.Forbidden:
+
+            print(
+                "[초대 추적 오류] "
+                "초대 조회 권한이 없습니다."
+            )
+            return
+
+        except discord.HTTPException as e:
+
+            print(f"[초대 조회 오류] {e}")
+            return
+
+        current_invites = {
+            invite.code: invite.uses or 0
+            for invite in new_invites
+        }
+
+        # 최초 캐시가 없으면 다음 입장부터 추적
+        if old_invites is None:
+
+            invite_cache[member.guild.id] = (
+                current_invites
+            )
+
+            print(
+                f"[입장] {member} "
+                f"- 초대자 확인 불가"
+            )
+            return
+
+        # 사용 횟수가 증가한 초대 링크 확인
+        used_invites = [
+            invite
+            for invite in new_invites
+            if invite.uses is not None
+            and invite.uses > old_invites.get(
+                invite.code,
+                0,
+            )
+        ]
+
+        # 다음 입장을 위해 캐시 갱신
+        invite_cache[member.guild.id] = (
+            current_invites
+        )
+
+        # 정확히 하나의 링크만 증가했을 때 기록
+        if len(used_invites) == 1:
+
+            used_invite = used_invites[0]
+
+            inviter = used_invite.inviter
+
+            if inviter is not None:
+
+                save_inviter(
+                    member.id,
+                    inviter.id,
+                )
+
+                print(
+                    f"[초대 기록] "
+                    f"입장자: {member} ({member.id})"
+                )
+
+                print(
+                    f"[초대한 사람] "
+                    f"{inviter} ({inviter.id})"
+                )
+
+                return
+
+        print(
+            f"[입장] {member} ({member.id}) "
+            f"- 초대자 확인 불가"
+        )
 
 
 # ==========================================
