@@ -27,6 +27,230 @@ def is_admin(member):
 
 
 # ==========================================
+# 예약 확정 가격 입력 모달
+# ==========================================
+
+class ReservationConfirmModal(discord.ui.Modal):
+
+    def __init__(self, message, admin_id):
+
+        super().__init__(
+            title="예약 확정 - 가격 입력"
+        )
+
+        self.message = message
+        self.admin_id = admin_id
+
+        self.amount = discord.ui.TextInput(
+            label="가격 (만 단위)",
+            placeholder="예: 350",
+            required=True,
+            max_length=12,
+        )
+
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        if not is_admin(interaction.user):
+            await interaction.response.send_message(
+                "관리자만 사용할 수 있습니다.",
+                ephemeral=True,
+            )
+            return
+
+        amount_text = self.amount.value.strip().replace(",", "")
+
+        if not amount_text.isdigit():
+            await interaction.response.send_message(
+                "가격은 0 이상의 숫자로 입력해 주세요.",
+                ephemeral=True,
+            )
+            return
+
+        amount = int(amount_text)
+
+        if "상태 : ⏳ 예약대기" not in self.message.content:
+            await interaction.response.send_message(
+                "이미 처리된 예약입니다.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"입력한 가격: **{amount:,}만**\n\n"
+            "반납 여부를 선택해 주세요.",
+            view=ReturnStatusView(
+                self.message,
+                amount,
+                self.admin_id,
+            ),
+            ephemeral=True,
+        )
+
+
+# ==========================================
+# 반납 여부 선택 메뉴
+# ==========================================
+
+class ReturnStatusSelect(discord.ui.Select):
+
+    def __init__(self, message, amount, admin_id):
+
+        self.message = message
+        self.amount = amount
+        self.admin_id = admin_id
+
+        options = [
+            discord.SelectOption(
+                label="반납",
+                value="반납",
+                description="반납하는 예약",
+            ),
+            discord.SelectOption(
+                label="미반납",
+                value="미반납",
+                description="반납하지 않는 예약",
+            ),
+        ]
+
+        super().__init__(
+            placeholder="반납 여부를 선택하세요.",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+
+        if not is_admin(interaction.user):
+            await interaction.response.send_message(
+                "관리자만 사용할 수 있습니다.",
+                ephemeral=True,
+            )
+            return
+
+        if interaction.user.id != self.admin_id:
+            await interaction.response.send_message(
+                "처음 예약 확정을 진행한 관리자만 처리할 수 있습니다.",
+                ephemeral=True,
+            )
+            return
+
+        content = self.message.content
+
+        if "상태 : ⏳ 예약대기" not in content:
+            await interaction.response.edit_message(
+                content="이미 처리된 예약입니다.",
+                view=None,
+            )
+            return
+
+        return_status = self.values[0]
+
+        # ==================================
+        # 예약 정보 수정
+        # ==================================
+
+        content = re.sub(
+            r"알\+올목\(.*?\)\s*:",
+            f"알+올목({return_status}) :",
+            content,
+            count=1,
+        )
+
+        content = content.replace(
+            "가격 미정",
+            f"{self.amount:,}만",
+            1,
+        )
+
+        content = content.replace(
+            "상태 : ⏳ 예약대기",
+            "상태 : ✅ 예약완료",
+            1,
+        )
+
+        # ==================================
+        # 예약 버튼 변경
+        # ==================================
+
+        reservation_view = ReservationView()
+
+        for item in reservation_view.children:
+            if isinstance(item, discord.ui.Button):
+                item.label = "예약 취소"
+                item.style = discord.ButtonStyle.danger
+
+        await interaction.response.defer(ephemeral=True)
+
+        await self.message.edit(
+            content=content,
+            view=reservation_view,
+        )
+
+        # ==================================
+        # 신청자 확인
+        # ==================================
+
+        match = re.search(
+            r"디코아이디\s*:\s*<@!?(\d+)>",
+            content,
+        )
+
+        member = None
+
+        if match and interaction.guild is not None:
+
+            user_id = int(match.group(1))
+
+            member = interaction.guild.get_member(user_id)
+
+            if member is None:
+                try:
+                    member = await interaction.guild.fetch_member(user_id)
+                except discord.HTTPException:
+                    member = None
+
+        if member is not None:
+
+            try:
+                await member.send(
+                    "🎉 **예약이 확정되었습니다!**\n\n"
+                    "신청해 주셔서 감사합니다.\n\n"
+                    f"💰 가격: **{self.amount:,}만**\n"
+                    f"📦 반납 여부: **{return_status}**\n\n"
+                    "📢 원활한 공대 진행을 위해 공지사항과 "
+                    "환불 및 주의사항을 다시 한번 확인해 주세요.\n\n"
+                    "당일 늦지 않게 참여 부탁드립니다.\n\n"
+                    "감사합니다!"
+                )
+
+            except discord.HTTPException:
+                pass
+
+        await interaction.followup.send(
+            "예약을 확정했습니다.",
+            ephemeral=True,
+        )
+
+
+class ReturnStatusView(discord.ui.View):
+
+    def __init__(self, message, amount, admin_id):
+
+        super().__init__(timeout=180)
+
+        self.add_item(
+            ReturnStatusSelect(
+                message,
+                amount,
+                admin_id,
+            )
+        )
+
+
+# ==========================================
 # 예약현황 버튼
 # ==========================================
 
@@ -108,6 +332,7 @@ class ReservationView(discord.ui.View):
             content = content.replace(
                 "상태 : ✅ 예약완료",
                 "상태 : ⏳ 예약대기",
+                1,
             )
 
             button.label = "예약 확정"
@@ -131,40 +356,14 @@ class ReservationView(discord.ui.View):
             return
 
         # ==================================
-        # 예약 확정
+        # 예약 확정 - 가격 입력
         # ==================================
 
-        content = content.replace(
-            "상태 : ⏳ 예약대기",
-            "상태 : ✅ 예약완료",
-        )
-
-        button.label = "예약 취소"
-        button.style = discord.ButtonStyle.danger
-
-        await interaction.response.edit_message(
-            content=content,
-            view=self,
-        )
-
-        if member is not None:
-
-            try:
-                await member.send(
-                    "🎉 **예약이 확정되었습니다!**\n\n"
-                    "신청해 주셔서 감사합니다.\n\n"
-                    "📢 원활한 공대 진행을 위해 공지사항과 "
-                    "환불 및 주의사항을 다시 한번 확인해 주세요.\n\n"
-                    "당일 늦지 않게 참여 부탁드립니다.\n\n"
-                    "감사합니다!"
-                )
-
-            except discord.HTTPException:
-                pass
-
-        await interaction.followup.send(
-            "예약을 확정했습니다.",
-            ephemeral=True,
+        await interaction.response.send_modal(
+            ReservationConfirmModal(
+                message,
+                interaction.user.id,
+            )
         )
 
 
@@ -205,13 +404,10 @@ async def register_reservation(
             "%Y-%m-%d"
         )
 
-        # 반납 / 미반납
-        return_text = data.return_status
-
-        # 금액 만 단위
-        amount_text = f"{data.amount:,}만"
-
+        # ==================================
         # 초대한 사람 확인
+        # ==================================
+
         if inviter_id is not None:
 
             inviter = guild.get_member(
@@ -235,13 +431,17 @@ async def register_reservation(
         else:
             inviter_text = "확인 불가"
 
+        # ==================================
+        # 예약현황 메시지
+        # ==================================
+
         content = (
             f"**{date_text}**\n\n"
-            f"알+올목({return_text}) : "
+            f"알+올목(미정) : "
             f"{data.nickname} / "
             f"{data.level} / "
             f"{data.job} / "
-            f"{amount_text}\n\n"
+            f"가격 미정\n\n"
             f"디코아이디 : {member.mention}\n"
             f"초대한 사람 : {inviter_text}\n"
             f"상태 : ⏳ 예약대기"
