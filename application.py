@@ -494,8 +494,8 @@ async def process_application(data):
     if not data.job.strip():
         raise ValueError("직업을 입력해 주세요.")
 
-    if data.level is None or not 1 <= data.level <= 300:
-        raise ValueError("레벨은 1~300 사이로 입력해 주세요.")
+    if data.level is None or not 1 <= data.level <= 200:
+        raise ValueError("레벨은 1~200 사이로 입력해 주세요.")
 
     new_nickname = (
         f"[{data.role_type}]"
@@ -509,15 +509,6 @@ async def process_application(data):
     # ======================================
 
     if data.role_type == "손님":
-
-        if data.amount is None:
-            raise ValueError("가격을 입력해 주세요.")
-
-        if data.amount < 0:
-            raise ValueError("가격은 0 이상이어야 합니다.")
-
-        if data.return_status not in ["반납", "미반납"]:
-            raise ValueError("반납 여부를 선택해 주세요.")
 
         role = discord.utils.get(
             guild.roles,
