@@ -5,7 +5,6 @@ import time
 
 from contextlib import asynccontextmanager
 from urllib.parse import urlencode
-from typing import Optional
 
 import discord
 import uvicorn
@@ -53,14 +52,7 @@ class ApplyData(BaseModel):
     job: str
     apply_date: str
 
-    level: int = Field(ge=1, le=300)
-
-    amount: Optional[int] = Field(
-        default=None,
-        ge=0,
-    )
-
-    return_status: Optional[str] = None
+    level: int = Field(ge=1, le=200)
 
 
 # ==========================================
