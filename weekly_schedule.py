@@ -4,13 +4,9 @@ import discord
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from discord.ui import View, Button, Modal, Select
+from discord.ui import View, Modal, Select
 
-from config import (
-    GUILD_ID,
-    ADMIN_ROLE_IDS,
-    SCHEDULE_CHANNEL_ID,
-)
+from config import ADMIN_ROLE_IDS
 
 import weekly_database as db
 
@@ -26,20 +22,26 @@ WEEKDAYS = [
 # 날짜 계산
 # ==========================================
 
+def get_today():
+
+    return datetime.now(KST).date()
+
+
 def get_week_start(date=None):
 
     if date is None:
-        date = datetime.now(KST).date()
+        date = get_today()
 
     return date - timedelta(days=date.weekday())
 
 
-def get_week_dates():
+def get_week_dates(week_start=None):
 
-    monday = get_week_start()
+    if week_start is None:
+        week_start = get_week_start()
 
     return [
-        monday + timedelta(days=i)
+        week_start + timedelta(days=i)
         for i in range(7)
     ]
 
@@ -64,16 +66,26 @@ def is_admin(member):
 # 일정 상태
 # ==========================================
 
-def get_day_status(user_id, date, schedule):
-
-    today = datetime.now(KST).date()
+def get_day_status(date, schedule):
 
     date_text = date.isoformat()
 
-    # 이미 지난 날짜는 잠금
+    today = get_today()
+
+    rest_days = db.get_rest_days()
+
+    # 저장된 일정 우선
+    status = schedule.get(date_text)
+
+    # 과거 날짜
     if date < today:
 
-        status = schedule.get(date_text, "참석")
+        if status is None:
+            status = (
+                "휴무"
+                if date.weekday() in rest_days
+                else "참석"
+            )
 
         if status == "휴무":
             return "휴무 잠금"
@@ -83,13 +95,45 @@ def get_day_status(user_id, date, schedule):
 
         return "참석 잠금"
 
-    # 현재 휴무 설정 확인
-    rest_days = db.get_rest_days()
-
+    # 오늘 및 미래 날짜
     if date.weekday() in rest_days:
         return "휴무"
 
-    return schedule.get(date_text, "참석")
+    return status or "참석"
+
+
+# ==========================================
+# 개인 일정 불참 요일 변환
+# ==========================================
+
+def get_unavailable_days(schedule, dates):
+
+    unavailable = []
+
+    today = get_today()
+
+    rest_days = db.get_rest_days()
+
+    for date in dates:
+
+        if date < today:
+            continue
+
+        if date.weekday() in rest_days:
+            continue
+
+        status = schedule.get(
+            date.isoformat(),
+            "참석"
+        )
+
+        if status == "불참":
+
+            unavailable.append(
+                WEEKDAYS[date.weekday()]
+            )
+
+    return unavailable
 
 
 # ==========================================
@@ -118,13 +162,10 @@ class WeeklyScheduleView(View):
             week_start.isoformat()
         )
 
-        rest_days = db.get_rest_days()
-
         modal = WeeklyScheduleModal(
             user_id,
             week_start,
-            current,
-            rest_days
+            current
         )
 
         await interaction.response.send_modal(modal)
@@ -156,14 +197,72 @@ class WeeklyScheduleView(View):
 
             return
 
-        db.copy_previous_schedule(
+        # 지난주 날짜를 이번 주 날짜로 변환
+        current = db.get_schedule(
             user_id,
-            previous_week.isoformat(),
             current_week.isoformat()
         )
 
+        today = get_today()
+
+        new_schedule = {}
+
+        previous_dates = get_week_dates(
+            previous_week
+        )
+
+        current_dates = get_week_dates(
+            current_week
+        )
+
+        for old_date, new_date in zip(
+            previous_dates,
+            current_dates
+        ):
+
+            date_text = new_date.isoformat()
+
+            # 지난 날짜는 기존 일정 유지
+            if new_date < today:
+
+                if date_text in current:
+                    new_schedule[date_text] = current[date_text]
+
+                else:
+                    new_schedule[date_text] = (
+                        "휴무"
+                        if new_date.weekday() in db.get_rest_days()
+                        else "참석"
+                    )
+
+                continue
+
+            old_status = previous.get(
+                old_date.isoformat(),
+                "참석"
+            )
+
+            # 이번 주 휴무 설정 우선
+            if new_date.weekday() in db.get_rest_days():
+
+                new_schedule[date_text] = "휴무"
+
+            elif old_status == "불참":
+
+                new_schedule[date_text] = "불참"
+
+            else:
+
+                new_schedule[date_text] = "참석"
+
+        db.save_schedule(
+            user_id,
+            current_week.isoformat(),
+            new_schedule
+        )
+
         await interaction.response.send_message(
-            "지난주 일정을 이번 주 일정에 복사했습니다.",
+            "지난주 일정을 이번 주에 복사했습니다.",
             ephemeral=True
         )
 
@@ -200,8 +299,7 @@ class WeeklyScheduleModal(Modal):
         self,
         user_id,
         week_start,
-        current,
-        rest_days
+        current
     ):
 
         super().__init__(
@@ -211,57 +309,31 @@ class WeeklyScheduleModal(Modal):
         self.user_id = user_id
         self.week_start = week_start
 
-        self.days = get_week_dates()
+        self.days = get_week_dates(
+            week_start
+        )
 
-        self.selects = []
+        # 기존 불참 일정 표시
+        unavailable = get_unavailable_days(
+            current,
+            self.days
+        )
 
-        for i, date in enumerate(self.days):
-
-            date_text = date.isoformat()
-
-            status = current.get(date_text, "참석")
-
-            if i in rest_days:
-                status = "휴무"
-
-            select = Select(
-                placeholder=format_day(date),
-                options=[
-                    discord.SelectOption(
-                        label="참석",
-                        value="참석",
-                        default=status == "참석"
-                    ),
-                    discord.SelectOption(
-                        label="불참",
-                        value="불참",
-                        default=status == "불참"
-                    ),
-                    discord.SelectOption(
-                        label="휴무",
-                        value="휴무",
-                        default=status == "휴무"
-                    )
-                ]
-            )
-
-            # Modal에는 Select를 직접 넣을 수 없으므로
-            # 아래 날짜별 입력은 텍스트 방식으로 처리한다.
-            self.selects.append(select)
+        default_text = ", ".join(unavailable)
 
         self.day_input = discord.ui.TextInput(
             label="불참 날짜",
-            placeholder="예: 화, 목, 토 (참석 가능한 날은 입력하지 않음)",
+            placeholder="예: 화, 목, 토",
+            default=default_text,
             required=False,
             max_length=50
         )
 
         self.add_item(self.day_input)
 
-        self.current = current
-
     async def on_submit(self, interaction):
 
+        # 본인 일정만 제출 가능
         if interaction.user.id != self.user_id:
 
             await interaction.response.send_message(
@@ -271,15 +343,17 @@ class WeeklyScheduleModal(Modal):
 
             return
 
-        today = datetime.now(KST).date()
+        today = get_today()
 
         week_start = self.week_start
 
+        # 현재 DB 일정 다시 조회
         previous = db.get_schedule(
             self.user_id,
             week_start.isoformat()
         )
 
+        # 입력값 정리
         unavailable = [
             x.strip()
             for x in self.day_input.value.split(",")
@@ -288,10 +362,23 @@ class WeeklyScheduleModal(Modal):
 
         valid_days = set(WEEKDAYS)
 
-        if any(x not in valid_days for x in unavailable):
+        if any(
+            day not in valid_days
+            for day in unavailable
+        ):
 
             await interaction.response.send_message(
                 "요일은 월, 화, 수, 목, 금, 토, 일 중에서 입력해 주세요.",
+                ephemeral=True
+            )
+
+            return
+
+        # 중복 요일 검사
+        if len(unavailable) != len(set(unavailable)):
+
+            await interaction.response.send_message(
+                "같은 요일을 중복 입력할 수 없습니다.",
                 ephemeral=True
             )
 
@@ -307,19 +394,19 @@ class WeeklyScheduleModal(Modal):
 
             weekday = WEEKDAYS[date.weekday()]
 
-            # 과거 일정은 기존 상태 유지
+            # 과거 날짜는 기존 상태 유지
             if date < today:
 
                 old_status = previous.get(
                     date_text,
-                    "참석"
+                    "휴무" if date.weekday() in rest_days else "참석"
                 )
 
                 schedule[date_text] = old_status
 
                 continue
 
-            # 기본 휴무일
+            # 휴무일 우선 적용
             if date.weekday() in rest_days:
 
                 schedule[date_text] = "휴무"
@@ -348,7 +435,7 @@ class WeeklyScheduleModal(Modal):
 
 
 # ==========================================
-# 공대장 설정
+# 공대장 설정 화면
 # ==========================================
 
 class WeeklyAdminView(View):
@@ -408,7 +495,51 @@ class WeeklyAdminView(View):
 
             return
 
+        dates = get_week_dates(
+            week_start
+        )
+
         lines = []
+
+        lines.append("📊 **이번 주 참석 현황**")
+        lines.append("")
+
+        # 요일별 참석 인원
+        for date in dates:
+
+            date_text = date.isoformat()
+
+            attendees = 0
+            unavailable = 0
+            rest = 0
+
+            for record in records:
+
+                schedule = record["schedule"]
+
+                status = get_day_status(
+                    date,
+                    schedule
+                )
+
+                if status in ("참석", "참석 잠금"):
+                    attendees += 1
+
+                elif status in ("불참", "불참 잠금"):
+                    unavailable += 1
+
+                elif status in ("휴무", "휴무 잠금"):
+                    rest += 1
+
+            lines.append(
+                f"**{format_day(date)}** "
+                f"참석 {attendees}명 / "
+                f"불참 {unavailable}명 / "
+                f"휴무 {rest}명"
+            )
+
+        lines.append("")
+        lines.append("📋 **개인별 불참 일정**")
 
         for record in records:
 
@@ -418,24 +549,65 @@ class WeeklyAdminView(View):
 
             unavailable = []
 
-            for date_text, status in schedule.items():
+            for date in dates:
 
-                if status == "불참":
+                status = get_day_status(
+                    date,
+                    schedule
+                )
 
-                    date = datetime.fromisoformat(date_text).date()
+                if status in ("불참", "불참 잠금"):
 
-                    unavailable.append(format_day(date))
+                    unavailable.append(
+                        format_day(date)
+                    )
 
-            text = ", ".join(unavailable) if unavailable else "전부 참석"
+            text = (
+                ", ".join(unavailable)
+                if unavailable
+                else "불참 없음"
+            )
 
             lines.append(
                 f"<@{user_id}> : {text}"
             )
 
+        # Discord 메시지 길이 제한 대응
+        content = "\n".join(lines)
+
+        chunks = []
+
+        while len(content) > 1900:
+
+            split_index = content.rfind(
+                "\n",
+                0,
+                1900
+            )
+
+            if split_index <= 0:
+                split_index = 1900
+
+            chunks.append(
+                content[:split_index]
+            )
+
+            content = content[split_index:].lstrip()
+
+        if content:
+            chunks.append(content)
+
         await interaction.response.send_message(
-            "\n".join(lines),
+            chunks[0],
             ephemeral=True
         )
+
+        for chunk in chunks[1:]:
+
+            await interaction.followup.send(
+                chunk,
+                ephemeral=True
+            )
 
 
 # ==========================================
@@ -498,24 +670,36 @@ class RestDayView(View):
 
 
 # ==========================================
-# 패널 생성
+# 공용 패널 생성
 # ==========================================
 
 async def send_weekly_panel(channel):
 
+    week_start = get_week_start()
+
+    dates = get_week_dates(
+        week_start
+    )
+
+    date_text = " / ".join(
+        format_day(date)
+        for date in dates
+    )
+
     embed = discord.Embed(
         title="📅 주간 참석 일정",
         description=(
-            "이번 주 참석 가능 일정을 제출해 주세요.\n\n"
-            "기본은 참석으로 설정되어 있습니다.\n"
-            "불참하는 날짜만 입력하면 됩니다.\n\n"
-            "지난주와 동일한 일정이라면 복사 기능을 이용하세요."
+            f"**이번 주 일정: {date_text}**\n\n"
+            "기본 상태는 참석입니다.\n"
+            "불참하는 요일만 입력해 주세요.\n\n"
+            "지난주와 일정이 동일하다면\n"
+            "지난주와 동일 버튼을 이용하세요."
         ),
         color=discord.Color.blue()
     )
 
     embed.set_footer(
-        text="일정은 언제든 수정할 수 있습니다."
+        text="제출 후에도 언제든 일정을 수정할 수 있습니다."
     )
 
     await channel.send(
@@ -530,4 +714,6 @@ async def send_weekly_panel(channel):
 
 def setup_weekly_schedule(bot):
 
-    bot.add_view(WeeklyScheduleView())
+    bot.add_view(
+        WeeklyScheduleView()
+    )
