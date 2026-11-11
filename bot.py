@@ -35,6 +35,11 @@ from application import (
     claim_deleted_invite,
 )
 
+# 메시지 자동 전달
+from message_forward import (
+    setup_message_forward,
+)
+
 
 # ==========================================
 # 지원서 데이터 모델
@@ -67,6 +72,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.invites = True
+intents.guild_reactions = True
 
 bot = commands.Bot(
     command_prefix="!",
@@ -74,6 +80,9 @@ bot = commands.Bot(
 )
 
 set_bot(bot)
+
+# 메시지 전달 이벤트 등록
+setup_message_forward(bot)
 
 
 # ==========================================
@@ -412,6 +421,11 @@ async def on_ready():
     print(
         f"[멤버 인텐트 활성화] "
         f"{bot.intents.members}"
+    )
+
+    print(
+        f"[반응 인텐트 활성화] "
+        f"{bot.intents.guild_reactions}"
     )
 
     print(
