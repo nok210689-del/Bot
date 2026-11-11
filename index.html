@@ -66,6 +66,10 @@
             border-color: #5865f2;
         }
 
+        select:invalid {
+            color: #949ba4;
+        }
+
         button {
             width: 100%;
             padding: 14px;
@@ -119,12 +123,6 @@
             display: none !important;
         }
 
-        .unit {
-            color: #949ba4;
-            font-size: 12px;
-            margin-top: 5px;
-        }
-
         /* 날짜 선택 */
         .date-picker-wrap {
             position: relative;
@@ -159,7 +157,7 @@
             font-size: 17px;
         }
 
-        /* 에러 시 흔들림 애니메이션 */
+        /* 에러 흔들림 */
         @keyframes shake {
             0% { transform: translateX(0); }
             20% { transform: translateX(-6px); }
@@ -275,18 +273,23 @@
 
         <div class="form-group">
             <label for="nickname">인게임 닉네임</label>
-            <input type="text" id="nickname" placeholder="예: 홍길동" required>
+            <input
+                type="text"
+                id="nickname"
+                placeholder="예: 홍길동"
+                required
+            >
         </div>
 
         <div class="form-group">
             <label for="roleType">구분</label>
             <select id="roleType" required>
+                <option value="" disabled selected>지원 유형을 선택하세요</option>
                 <option value="손님">손님</option>
                 <option value="용병">용병</option>
             </select>
         </div>
 
-        <!-- 손님 / 용병 공통 레벨 -->
         <div class="form-group">
             <label for="level">레벨</label>
             <input
@@ -294,46 +297,28 @@
                 id="level"
                 placeholder="예: 123"
                 min="1"
-                max="300"
+                max="200"
+                step="1"
                 required
             >
         </div>
 
-        <!-- 손님 전용 항목 -->
-        <div id="guestFields">
-
-            <div class="form-group">
-                <label for="amount">가격</label>
-                <input
-                    type="number"
-                    id="amount"
-                    placeholder="예: 4000"
-                    min="0"
-                >
-                <div class="unit">단위: 만 메소</div>
-            </div>
-
-            <div class="form-group">
-                <label for="returnStatus">반납 여부</label>
-                <select id="returnStatus">
-                    <option value="반납">반납</option>
-                    <option value="미반납">미반납</option>
-                </select>
-            </div>
-
-        </div>
-
         <div class="form-group">
             <label for="job">직업</label>
-            <input type="text" id="job" placeholder="예: 비숍" required>
+            <input
+                type="text"
+                id="job"
+                placeholder="예: 비숍"
+                required
+            >
         </div>
 
-        <!-- 날짜 선택 -->
+        <!-- 약속 날짜 -->
         <div class="form-group">
             <label>
-                참여 희망 날짜
+                약속 날짜
                 <span style="color: #fEE75C; font-size: 12px; font-weight: normal;">
-                    (※ 작성일이 아닌 파티 참여일 선택)
+                    (※ 작성일이 아닌 실제 약속 날짜 선택)
                 </span>
             </label>
 
@@ -347,7 +332,7 @@
                     aria-expanded="false"
                 >
                     <span id="dateText" class="date-placeholder">
-                        👉 클릭해서 참여할 날짜를 직접 선택하세요
+                        👉 클릭해서 약속 날짜를 직접 선택하세요
                     </span>
                     <span class="date-icon">📅</span>
                 </div>
@@ -374,20 +359,23 @@
 
 <script>
     const BACKEND_URL = "https://bot-t3zc.onrender.com/api/apply";
+
     const urlParams = new URLSearchParams(window.location.search);
     const discordId = urlParams.get('discord_id');
 
     const roleType = document.getElementById('roleType');
-    const guestFields = document.getElementById('guestFields');
     const levelInput = document.getElementById('level');
-    const amountInput = document.getElementById('amount');
-    const returnInput = document.getElementById('returnStatus');
+    const nicknameInput = document.getElementById('nickname');
+    const jobInput = document.getElementById('job');
+
     const applyDate = document.getElementById('applyDate');
     const dateText = document.getElementById('dateText');
     const dateDisplay = document.getElementById('dateDisplay');
+
     const calendar = document.getElementById('calendar');
     const calendarTitle = document.getElementById('calendarTitle');
     const calendarGrid = document.getElementById('calendarGrid');
+
     const applyForm = document.getElementById('applyForm');
     const submitBtn = document.getElementById('submitBtn');
     const statusDiv = document.getElementById('status');
@@ -397,6 +385,8 @@
 
     let calendarYear = today.getFullYear();
     let calendarMonth = today.getMonth();
+
+    let isSubmitting = false;
 
     function formatDate(year, month, day) {
         return [
@@ -408,7 +398,9 @@
 
     function updateDateDisplay() {
         if (!applyDate.value) {
-            dateText.innerText = "👉 클릭해서 참여할 날짜를 직접 선택하세요";
+            dateText.innerText =
+                "👉 클릭해서 약속 날짜를 직접 선택하세요";
+
             dateText.classList.add("date-placeholder");
             return;
         }
@@ -416,7 +408,9 @@
         const [year, month, day] = applyDate.value.split('-').map(Number);
         const date = new Date(year, month - 1, day);
 
-        dateText.innerText = `${applyDate.value} (${days[date.getDay()]}) 참여`;
+        dateText.innerText =
+            `${applyDate.value} (${days[date.getDay()]})`;
+
         dateText.classList.remove("date-placeholder");
     }
 
@@ -438,7 +432,9 @@
     }
 
     function renderCalendar() {
-        calendarTitle.innerText = `${calendarYear}년 ${calendarMonth + 1}월`;
+        calendarTitle.innerText =
+            `${calendarYear}년 ${calendarMonth + 1}월`;
+
         calendarGrid.innerHTML = "";
 
         days.forEach(day => {
@@ -448,17 +444,24 @@
             calendarGrid.appendChild(cell);
         });
 
-        const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
-        const lastDate = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-        const previousLastDate = new Date(calendarYear, calendarMonth, 0).getDate();
+        const firstDay =
+            new Date(calendarYear, calendarMonth, 1).getDay();
+
+        const lastDate =
+            new Date(calendarYear, calendarMonth + 1, 0).getDate();
+
+        const previousLastDate =
+            new Date(calendarYear, calendarMonth, 0).getDate();
 
         for (let i = 0; i < firstDay; i++) {
             const day = previousLastDate - firstDay + i + 1;
+
             const cell = document.createElement("button");
             cell.type = "button";
             cell.className = "calendar-day other";
             cell.innerText = day;
             cell.disabled = true;
+
             calendarGrid.appendChild(cell);
         }
 
@@ -480,7 +483,7 @@
                 day
             );
 
-            // 오늘보다 이전 날짜인 경우 비활성화
+            // 오늘 이전 날짜 선택 불가
             if (dateValue < todayValue) {
                 cell.disabled = true;
                 cell.classList.add("other");
@@ -501,8 +504,12 @@
             if (!cell.disabled) {
                 cell.addEventListener('click', () => {
                     applyDate.value = dateValue;
+
                     updateDateDisplay();
                     closeCalendar();
+
+                    dateDisplay.classList.remove("error-highlight");
+                    statusDiv.innerText = "";
                 });
             }
 
@@ -518,6 +525,7 @@
             cell.className = "calendar-day other";
             cell.innerText = i;
             cell.disabled = true;
+
             calendarGrid.appendChild(cell);
         }
     }
@@ -577,24 +585,10 @@
         }
     });
 
-    function updateGuestFields() {
-        const isGuest = roleType.value === "손님";
-
-        guestFields.classList.toggle("hidden", !isGuest);
-
-        // 레벨은 손님과 용병 모두 필수
-        levelInput.required = true;
-
-        // 가격과 반납 여부는 손님만 필수
-        amountInput.required = isGuest;
-        returnInput.required = isGuest;
-    }
-
-    roleType.addEventListener('change', updateGuestFields);
-    updateGuestFields();
-
+    // 디스코드 연동 확인
     if (!discordId) {
         const userInfo = document.getElementById('userInfo');
+
         userInfo.className = "user-info error";
         userInfo.innerText =
             "⚠️ 잘못된 접근입니다. 디스코드 봇 링크를 통해 접속해주세요.";
@@ -602,8 +596,13 @@
         submitBtn.disabled = true;
     }
 
+    // 제출
     applyForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        if (isSubmitting) {
+            return;
+        }
 
         if (!discordId) {
             statusDiv.className = "error";
@@ -612,43 +611,129 @@
             return;
         }
 
+        // 닉네임 공백 검사
+        const nickname = nicknameInput.value.trim();
+
+        if (!nickname) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 인게임 닉네임을 입력해주세요.";
+
+            nicknameInput.focus();
+            return;
+        }
+
+        // 지원 유형 검사
+        if (!roleType.value) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 지원 유형을 선택해주세요.";
+
+            roleType.focus();
+            return;
+        }
+
+        // 레벨 검사
+        const level = Number(levelInput.value);
+
+        if (
+            levelInput.value.trim() === "" ||
+            !Number.isInteger(level) ||
+            level < 1 ||
+            level > 200
+        ) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 레벨은 1~200 사이의 정수로 입력해주세요.";
+
+            levelInput.focus();
+            return;
+        }
+
+        // 직업 검사
+        const job = jobInput.value.trim();
+
+        if (!job) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 직업을 입력해주세요.";
+
+            jobInput.focus();
+            return;
+        }
+
+        // 약속 날짜 검사
         if (!applyDate.value) {
             statusDiv.className = "error";
             statusDiv.innerText =
-                "❌ [필수] 작성일이 아닙니다! 파티에 참여할 희망 날짜를 선택해주세요.";
+                "❌ 약속 날짜를 선택해주세요.";
 
             dateDisplay.classList.add("error-highlight");
+            openCalendar();
+            return;
+        }
 
-            setTimeout(() => {
-                dateDisplay.classList.remove("error-highlight");
-            }, 400);
+        const [dateYear, dateMonth, dateDay] =
+            applyDate.value.split('-').map(Number);
+
+        const selectedDate = new Date(
+            dateYear,
+            dateMonth - 1,
+            dateDay
+        );
+
+        const todayValue = formatDate(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate()
+        );
+
+        if (
+            isNaN(selectedDate.getTime()) ||
+            formatDate(dateYear, dateMonth - 1, dateDay) !== applyDate.value ||
+            applyDate.value < todayValue
+        ) {
+            statusDiv.className = "error";
+            statusDiv.innerText =
+                "❌ 올바른 약속 날짜를 선택해주세요.";
 
             openCalendar();
             return;
         }
 
-        const isGuest = roleType.value === "손님";
+        // 제출 전 전체 내용 확인
+        const confirmMessage =
+            "아래 내용으로 지원서를 제출하시겠습니까?\n\n" +
+            "━━━━━━━━━━━━━━━━━━\n" +
+            "인게임 닉네임 : " + nickname + "\n" +
+            "구분 : " + roleType.value + "\n" +
+            "레벨 : " + level + "\n" +
+            "직업 : " + job + "\n" +
+            "약속 날짜 : " + applyDate.value + "\n" +
+            "━━━━━━━━━━━━━━━━━━\n\n" +
+            "내용이 정확하다면 확인을 눌러주세요.";
 
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        // 서버 전송 데이터
+        const formData = {
+            discord_id: discordId,
+            nickname: nickname,
+            role_type: roleType.value,
+            job: job,
+            apply_date: applyDate.value,
+            level: level
+        };
+
+        isSubmitting = true;
         submitBtn.disabled = true;
         submitBtn.innerText = "제출 중...";
+        statusDiv.className = "";
         statusDiv.innerText = "";
 
         try {
-            const formData = {
-                discord_id: discordId,
-                nickname: document.getElementById('nickname').value.trim(),
-                role_type: roleType.value,
-                job: document.getElementById('job').value.trim(),
-                apply_date: applyDate.value,
-
-                // 손님과 용병 모두 레벨 전송
-                level: Number(levelInput.value),
-
-                // 가격과 반납 여부는 손님만 전송
-                amount: isGuest ? Number(amountInput.value) : null,
-                return_status: isGuest ? returnInput.value : null
-            };
-
             const response = await fetch(BACKEND_URL, {
                 method: "POST",
                 headers: {
@@ -668,7 +753,8 @@
                 result.message || "✅ 지원서 제출 완료!";
 
             applyForm.reset();
-            updateGuestFields();
+
+            applyDate.value = "";
             updateDateDisplay();
             closeCalendar();
 
@@ -684,7 +770,8 @@
                 (err.message || "서버 연결을 확인해주세요.");
 
         } finally {
-            submitBtn.disabled = false;
+            isSubmitting = false;
+            submitBtn.disabled = !discordId;
             submitBtn.innerText = "제출하기";
         }
     });
