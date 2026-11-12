@@ -1,12 +1,9 @@
-
 import os
 import asyncio
 import time
-import calendar
 
-from datetime import datetime, date
-from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
+from urllib.parse import urlencode
 
 import discord
 import uvicorn
@@ -19,6 +16,7 @@ from pydantic import BaseModel, Field
 from config import (
     TOKEN,
     GUILD_ID,
+    GITHUB_BASE_URL,
     NOTICE_CHANNEL_ID,
 )
 
@@ -34,18 +32,17 @@ from application import (
     claim_deleted_invite,
 )
 
+# 메시지 자동 전달
 from message_forward import (
     setup_message_forward,
 )
 
 
 # ==========================================
-# 기본 설정
+# 패널 명령어 사용 권한
 # ==========================================
 
 PANEL_OWNER_ID = 218196720058630147
-
-KST = ZoneInfo("Asia/Seoul")
 
 
 # ==========================================
@@ -80,6 +77,7 @@ bot = commands.Bot(
 
 set_bot(bot)
 
+# 메시지 전달 이벤트 등록
 setup_message_forward(bot)
 
 
@@ -99,14 +97,12 @@ views_registered = False
 # ==========================================
 
 async def refresh_invites(guild):
-
     try:
         invites = await guild.invites()
 
         current = {}
 
         for invite in invites:
-
             current[invite.code] = (
                 invite.uses or 0
             )
@@ -135,14 +131,12 @@ async def refresh_invites(guild):
         return True
 
     except discord.Forbidden:
-
         print(
             "[초대 추적 오류] "
             "서버 관리 권한이 필요합니다."
         )
 
     except discord.HTTPException as e:
-
         print(f"[초대 조회 오류] {e}")
 
     return False
@@ -154,7 +148,6 @@ async def refresh_invites(guild):
 
 @bot.event
 async def on_invite_create(invite):
-
     print(
         f"[초대 생성 이벤트 수신] "
         f"code={invite.code} / "
@@ -181,14 +174,12 @@ async def on_invite_create(invite):
     )
 
     if success:
-
         print(
             f"[초대 생성 기록 완료] "
             f"{invite.code} / {inviter_id}"
         )
 
         async with invite_lock:
-
             cache = invite_cache.setdefault(
                 invite.guild.id,
                 {},
@@ -199,7 +190,6 @@ async def on_invite_create(invite):
             )
 
     else:
-
         print(
             f"[초대 생성 기록 실패] {invite.code}"
         )
@@ -211,12 +201,10 @@ async def on_invite_create(invite):
 
 @bot.event
 async def on_invite_delete(invite):
-
     if invite.guild is None:
         return
 
     async with invite_lock:
-
         cache = invite_cache.get(
             invite.guild.id,
             {},
@@ -235,14 +223,12 @@ async def on_invite_delete(invite):
 # ==========================================
 
 async def detect_used_invite(guild, member_id):
-
     old_invites = invite_cache.get(
         guild.id,
         {},
     ).copy()
 
     for attempt in range(5):
-
         try:
             new_invites = await guild.invites()
 
@@ -259,7 +245,6 @@ async def detect_used_invite(guild, member_id):
             ]
 
             if len(used_invites) == 1:
-
                 used = used_invites[0]
 
                 inviter_id = (
@@ -276,7 +261,6 @@ async def detect_used_invite(guild, member_id):
                     return inviter_id
 
             elif len(used_invites) > 1:
-
                 print(
                     "[초대 추적] "
                     "여러 초대 링크 사용 감지"
@@ -294,7 +278,6 @@ async def detect_used_invite(guild, member_id):
             )
 
             if deleted_codes:
-
                 inviter_id = claim_deleted_invite(
                     guild.id,
                     list(deleted_codes),
@@ -302,7 +285,6 @@ async def detect_used_invite(guild, member_id):
                 )
 
                 if inviter_id is not None:
-
                     invite_cache[guild.id] = (
                         current_invites
                     )
@@ -325,7 +307,6 @@ async def detect_used_invite(guild, member_id):
             )
 
         except discord.Forbidden:
-
             print(
                 "[초대 추적 오류] "
                 "초대 조회 권한이 없습니다."
@@ -334,7 +315,6 @@ async def detect_used_invite(guild, member_id):
             return None
 
         except discord.HTTPException as e:
-
             print(f"[초대 조회 오류] {e}")
 
         if attempt < 4:
@@ -344,553 +324,10 @@ async def detect_used_invite(guild, member_id):
 
 
 # ==========================================
-# 지원 유형 선택
-# ==========================================
-
-class ApplyTypeView(discord.ui.View):
-
-    def __init__(self):
-        super().__init__(timeout=180)
-
-    async def interaction_check(self, interaction):
-
-        if interaction.user.bot:
-            return False
-
-        return True
-
-    @discord.ui.button(
-        label="손님 지원",
-        style=discord.ButtonStyle.primary,
-        custom_id="apply_type_guest",
-    )
-    async def guest_callback(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        await interaction.response.send_modal(
-            ApplyModal("손님")
-        )
-
-    @discord.ui.button(
-        label="용병 지원",
-        style=discord.ButtonStyle.success,
-        custom_id="apply_type_mercenary",
-    )
-    async def mercenary_callback(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        await interaction.response.send_modal(
-            ApplyModal("용병")
-        )
-
-
-# ==========================================
-# 지원서 입력 모달
-# ==========================================
-
-class ApplyModal(discord.ui.Modal):
-
-    def __init__(self, role_type):
-
-        super().__init__(
-            title=f"{role_type} 지원서 작성"
-        )
-
-        self.role_type = role_type
-
-        self.nickname = discord.ui.TextInput(
-            label="인게임 닉네임",
-            placeholder="메이플랜드 닉네임",
-            max_length=20,
-            required=True,
-        )
-
-        self.job = discord.ui.TextInput(
-            label="직업",
-            placeholder="예: 보우마스터",
-            max_length=20,
-            required=True,
-        )
-
-        self.level = discord.ui.TextInput(
-            label="레벨",
-            placeholder="1~200",
-            max_length=3,
-            required=True,
-        )
-
-        self.add_item(self.nickname)
-        self.add_item(self.job)
-        self.add_item(self.level)
-
-    async def on_submit(
-        self,
-        interaction: discord.Interaction,
-    ):
-
-        nickname = self.nickname.value.strip()
-        job = self.job.value.strip()
-
-        try:
-            level = int(self.level.value.strip())
-
-        except ValueError:
-
-            await interaction.response.send_message(
-                "레벨은 숫자로 입력해 주세요.",
-                ephemeral=True,
-            )
-
-            return
-
-        if not 1 <= level <= 200:
-
-            await interaction.response.send_message(
-                "레벨은 1~200 사이로 입력해 주세요.",
-                ephemeral=True,
-            )
-
-            return
-
-        if not nickname or not job:
-
-            await interaction.response.send_message(
-                "닉네임과 직업을 입력해 주세요.",
-                ephemeral=True,
-            )
-
-            return
-
-        apply_data = {
-            "discord_id": str(interaction.user.id),
-            "nickname": nickname,
-            "role_type": self.role_type,
-            "job": job,
-            "level": level,
-        }
-
-        view = ApplyCalendarView(
-            interaction.user.id,
-            apply_data,
-        )
-
-        await interaction.response.send_message(
-            "📅 **참여 날짜를 선택해 주세요.**\n"
-            "오늘 이전 날짜는 선택할 수 없습니다.",
-            embed=view.make_embed(),
-            view=view,
-            ephemeral=True,
-        )
-
-
-# ==========================================
-# 지원 날짜 달력
-# ==========================================
-
-class ApplyCalendarView(discord.ui.View):
-
-    def __init__(self, user_id, apply_data):
-
-        super().__init__(timeout=300)
-
-        self.user_id = user_id
-        self.apply_data = apply_data
-
-        today = datetime.now(KST).date()
-
-        self.year = today.year
-        self.month = today.month
-
-        # 0 = 1~25일
-        # 1 = 26~31일
-        self.date_page = 0
-
-        self.build_components()
-
-    async def interaction_check(self, interaction):
-
-        if interaction.user.id != self.user_id:
-
-            await interaction.response.send_message(
-                "본인의 지원서에서만 사용할 수 있습니다.",
-                ephemeral=True,
-            )
-
-            return False
-
-        return True
-
-    def today(self):
-
-        return datetime.now(KST).date()
-
-    def make_embed(self):
-
-        today = self.today()
-
-        first_day = date(
-            self.year,
-            self.month,
-            1,
-        )
-
-        # 일요일을 첫 번째 요일로 설정
-        cal = calendar.Calendar(
-            firstweekday=6
-        )
-
-        weeks = cal.monthdayscalendar(
-            self.year,
-            self.month,
-        )
-
-        weekdays = [
-            "일",
-            "월",
-            "화",
-            "수",
-            "목",
-            "금",
-            "토",
-        ]
-
-        lines = []
-
-        lines.append(
-            " ".join(
-                f"{day:^3}"
-                for day in weekdays
-            )
-        )
-
-        for week in weeks:
-
-            row = []
-
-            for day in week:
-
-                if day == 0:
-                    row.append("   ")
-                    continue
-
-                current_date = date(
-                    self.year,
-                    self.month,
-                    day,
-                )
-
-                if current_date < today:
-                    row.append(" × ")
-                else:
-                    row.append(
-                        f"{day:^3}"
-                    )
-
-            lines.append(" ".join(row))
-
-        embed = discord.Embed(
-            title=f"📅 {self.year}년 {self.month}월",
-            description=(
-                "```text\n"
-                + "\n".join(lines)
-                + "\n```"
-                "날짜 선택 목록에서 참여일을 골라 주세요.\n"
-                "× 표시는 선택할 수 없는 지난 날짜입니다."
-            ),
-            color=0x5865F2,
-        )
-
-        embed.add_field(
-            name="날짜 선택 페이지",
-            value=(
-                "1페이지: 1일~25일\n"
-                "2페이지: 26일~31일"
-            ),
-            inline=False,
-        )
-
-        return embed
-
-    def get_date_options(self):
-
-        today = self.today()
-
-        if self.date_page == 0:
-            start_day = 1
-            end_day = 25
-        else:
-            start_day = 26
-            end_day = 31
-
-        last_day = calendar.monthrange(
-            self.year,
-            self.month,
-        )[1]
-
-        options = []
-
-        for day in range(
-            start_day,
-            min(end_day, last_day) + 1,
-        ):
-
-            selected_date = date(
-                self.year,
-                self.month,
-                day,
-            )
-
-            # 오늘 이전 날짜는 목록에서 제외
-            if selected_date < today:
-                continue
-
-            weekday = [
-                "월",
-                "화",
-                "수",
-                "목",
-                "금",
-                "토",
-                "일",
-            ][selected_date.weekday()]
-
-            options.append(
-                discord.SelectOption(
-                    label=f"{self.month}월 {day}일 ({weekday})",
-                    value=selected_date.strftime(
-                        "%Y-%m-%d"
-                    ),
-                )
-            )
-
-        return options
-
-    def build_components(self):
-
-        self.clear_items()
-
-        options = self.get_date_options()
-
-        if options:
-
-            date_select = discord.ui.Select(
-                placeholder="참여 날짜 선택",
-                min_values=1,
-                max_values=1,
-                options=options,
-                row=0,
-            )
-
-            date_select.callback = (
-                self.date_select_callback
-            )
-
-            self.add_item(date_select)
-
-        today = self.today()
-
-        current_month = (
-            today.year,
-            today.month,
-        )
-
-        previous_disabled = (
-            self.year,
-            self.month,
-        ) <= current_month
-
-        previous_month = discord.ui.Button(
-            label="◀ 이전 달",
-            style=discord.ButtonStyle.secondary,
-            disabled=previous_disabled,
-            row=1,
-        )
-
-        next_month = discord.ui.Button(
-            label="다음 달 ▶",
-            style=discord.ButtonStyle.secondary,
-            row=1,
-        )
-
-        previous_page = discord.ui.Button(
-            label="이전 날짜",
-            style=discord.ButtonStyle.secondary,
-            disabled=self.date_page == 0,
-            row=1,
-        )
-
-        next_page = discord.ui.Button(
-            label="다음 날짜",
-            style=discord.ButtonStyle.secondary,
-            disabled=self.date_page == 1,
-            row=1,
-        )
-
-        cancel = discord.ui.Button(
-            label="취소",
-            style=discord.ButtonStyle.danger,
-            row=1,
-        )
-
-        async def previous_month_callback(interaction):
-            self.change_month(-1)
-            await self.refresh(interaction)
-
-        async def next_month_callback(interaction):
-            self.change_month(1)
-            await self.refresh(interaction)
-
-        async def previous_page_callback(interaction):
-            self.date_page = 0
-            await self.refresh(interaction)
-
-        async def next_page_callback(interaction):
-            self.date_page = 1
-            await self.refresh(interaction)
-
-        async def cancel_callback(interaction):
-            self.stop()
-
-            await interaction.response.edit_message(
-                content="지원서 작성을 취소했습니다.",
-                embed=None,
-                view=None,
-            )
-
-        previous_month.callback = (
-            previous_month_callback
-        )
-
-        next_month.callback = (
-            next_month_callback
-        )
-
-        previous_page.callback = (
-            previous_page_callback
-        )
-
-        next_page.callback = (
-            next_page_callback
-        )
-
-        cancel.callback = cancel_callback
-
-        self.add_item(previous_month)
-        self.add_item(next_month)
-        self.add_item(previous_page)
-        self.add_item(next_page)
-        self.add_item(cancel)
-
-    def change_month(self, amount):
-
-        month = self.month + amount
-        year = self.year
-
-        if month < 1:
-            month = 12
-            year -= 1
-
-        elif month > 12:
-            month = 1
-            year += 1
-
-        self.year = year
-        self.month = month
-
-        self.date_page = 0
-
-    async def refresh(self, interaction):
-
-        self.build_components()
-
-        await interaction.response.edit_message(
-            embed=self.make_embed(),
-            view=self,
-        )
-
-    async def date_select_callback(self, interaction):
-
-        selected_date = (
-            interaction.data["values"][0]
-        )
-
-        selected = datetime.strptime(
-            selected_date,
-            "%Y-%m-%d",
-        ).date()
-
-        if selected < self.today():
-
-            await interaction.response.send_message(
-                "오늘 이전 날짜는 선택할 수 없습니다.",
-                ephemeral=True,
-            )
-
-            return
-
-        self.apply_data["apply_date"] = (
-            selected_date
-        )
-
-        data = ApplyData(
-            **self.apply_data
-        )
-
-        await interaction.response.defer(
-            ephemeral=True
-        )
-
-        try:
-
-            result = await process_application(
-                data
-            )
-
-            for child in self.children:
-                child.disabled = True
-
-            await interaction.message.edit(
-                view=self
-            )
-
-            await interaction.followup.send(
-                f"✅ {result['message']}",
-                ephemeral=True,
-            )
-
-            self.stop()
-
-        except ValueError as e:
-
-            await interaction.followup.send(
-                f"❌ {e}",
-                ephemeral=True,
-            )
-
-        except Exception as e:
-
-            print(
-                f"[지원서 처리 오류] {e}"
-            )
-
-            await interaction.followup.send(
-                "지원서 처리 중 오류가 발생했습니다.",
-                ephemeral=True,
-            )
-
-
-# ==========================================
-# 지원서 작성 패널 버튼
+# 지원서 작성 버튼
 # ==========================================
 
 class ApplyView(discord.ui.View):
-
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -904,10 +341,32 @@ class ApplyView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ):
+        await interaction.response.defer(
+            ephemeral=True,
+        )
 
-        await interaction.response.send_message(
-            "지원 유형을 선택해 주세요.",
-            view=ApplyTypeView(),
+        params = urlencode({
+            "discord_id": str(interaction.user.id)
+        })
+
+        apply_url = (
+            f"{GITHUB_BASE_URL.rstrip('/')}/"
+            f"?{params}"
+        )
+
+        view = discord.ui.View()
+
+        view.add_item(
+            discord.ui.Button(
+                label="지원서 작성 페이지 열기",
+                style=discord.ButtonStyle.link,
+                url=apply_url,
+            )
+        )
+
+        await interaction.followup.send(
+            "아래 버튼을 눌러 지원서를 작성해 주세요.",
+            view=view,
             ephemeral=True,
         )
 
@@ -918,48 +377,38 @@ class ApplyView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-
     global views_registered
 
     print("=" * 40)
-
     print(
         f"[Discord.py 버전] "
         f"{discord.__version__}"
     )
-
     print(
         f"[초대 인텐트 활성화] "
         f"{bot.intents.invites}"
     )
-
     print(
         f"[멤버 인텐트 활성화] "
         f"{bot.intents.members}"
     )
-
     print(
         f"[반응 인텐트 활성화] "
         f"{bot.intents.guild_reactions}"
     )
-
     print(
         f"[Gateway 인텐트 값] "
         f"{bot.intents.value}"
     )
-
     print(
         f"[초대 이벤트 핸들러 등록] "
         f"{callable(getattr(bot, 'on_invite_create', None))}"
     )
-
     print(f"Discord 로그인 완료: {bot.user}")
     print(f"서버 ID: {GUILD_ID}")
-
     print("=" * 40)
 
     if not views_registered:
-
         bot.add_view(ApplyView())
         bot.add_view(ReservationView())
 
@@ -971,7 +420,6 @@ async def on_ready():
     guild = bot.get_guild(GUILD_ID)
 
     if guild is not None:
-
         async with invite_lock:
             await refresh_invites(guild)
 
@@ -982,7 +430,6 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-
     if member.guild.id != GUILD_ID:
         return
 
@@ -992,14 +439,12 @@ async def on_member_join(member):
     )
 
     async with invite_lock:
-
         inviter_id = await detect_used_invite(
             member.guild,
             member.id,
         )
 
         if inviter_id is None:
-
             print(
                 f"[입장] {member} ({member.id}) "
                 "- 초대자 확인 불가"
@@ -1032,9 +477,8 @@ async def on_member_join(member):
 
 @bot.command(name="패널")
 async def panel_command(ctx):
-
+    # 지정된 Discord 계정만 사용 가능
     if ctx.author.id != PANEL_OWNER_ID:
-
         await ctx.reply(
             "패널 명령어 사용 권한이 없습니다."
         )
@@ -1053,7 +497,7 @@ async def panel_command(ctx):
             "승인 완료 시 규칙 채널을 안내해 드립니다.\n\n"
             "━━━━━━━━━━━━━━━━━━\n"
             "📝 **지원서 작성**\n"
-            "아래 버튼을 눌러 지원 유형과 지원서를 작성해 주세요.\n\n"
+            "아래 버튼을 눌러 지원서를 작성해 주세요.\n\n"
             "⚠️ **버튼이 작동하지 않나요?**\n"
             "예약 문의는 예약 안내를 받으신 담당자 "
             "또는 아래 담당자에게 DM으로 문의해 주세요.\n"
@@ -1075,7 +519,6 @@ async def panel_command(ctx):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     print("[서버] Discord 봇 시작")
 
     bot_task = asyncio.create_task(
@@ -1084,9 +527,7 @@ async def lifespan(app: FastAPI):
 
     try:
         yield
-
     finally:
-
         print("[서버] Discord 봇 종료 중...")
 
         if not bot.is_closed():
@@ -1094,12 +535,8 @@ async def lifespan(app: FastAPI):
 
         try:
             await bot_task
-
         except Exception as e:
-
-            print(
-                f"[종료 중 예외 발생 (무시됨)] {e}"
-            )
+            print(f"[종료 중 예외 발생 (무시됨)] {e}")
 
         print("[서버] Discord 봇 완전 종료 완료")
 
@@ -1129,27 +566,21 @@ app.add_middleware(
 @app.get("/")
 @app.head("/")
 async def health_check():
-
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
 # ==========================================
-# 기존 지원서 API 유지
+# 지원서 접수 API
 # ==========================================
 
 @app.post("/api/apply")
 async def apply_application(data: ApplyData):
-
     try:
-
         result = await process_application(data)
 
         return result
 
     except ValueError as e:
-
         raise HTTPException(
             status_code=400,
             detail=str(e),
@@ -1159,10 +590,7 @@ async def apply_application(data: ApplyData):
         raise
 
     except Exception as e:
-
-        print(
-            f"[지원서 처리 오류] {e}"
-        )
+        print(f"[지원서 처리 오류] {e}")
 
         raise HTTPException(
             status_code=500,
@@ -1175,11 +603,11 @@ async def apply_application(data: ApplyData):
 # ==========================================
 
 if __name__ == "__main__":
-
     port = int(
         os.environ.get("PORT", 10000)
     )
 
+    # Render 로드밸런서 연결 유지
     uvicorn.run(
         app,
         host="0.0.0.0",
