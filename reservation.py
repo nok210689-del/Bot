@@ -1,3 +1,4 @@
+
 import re
 from datetime import datetime
 
@@ -7,7 +8,6 @@ from config import (
     RESERVATION_CHANNEL_ID,
     ADMIN_ROLE_IDS,
     PARTY_MEMBER_ROLE_IDS,
-    MERCENARY_ROLE_IDS,
 )
 
 
@@ -22,23 +22,41 @@ DM_SENT_MARKER = "예약 알림 발송 완료"
 
 
 # ==========================================
-# 권한 확인 (관리자, 공대원, 용병)
+# 관리자 전용 권한 확인
+# 용병 승인 / 거절
 # ==========================================
 
-def can_manage_reservation(member):
+def is_admin(member):
+
     if not isinstance(member, discord.Member):
         return False
 
-    # 1. 관리자(공대장 등) 권한 체크
-    is_admin = any(role.id in ADMIN_ROLE_IDS for role in member.roles)
-    
-    # 2. 공대원 권한 체크
-    is_party_member = any(role.id in PARTY_MEMBER_ROLE_IDS for role in member.roles)
-    
-    # 3. 용병 권한 체크 (용병도 권한을 주고 싶지 않다면 아래 줄에서 'or any(...)' 부분을 제거하세요)
-    is_mercenary = any(role.id in MERCENARY_ROLE_IDS for role in member.roles)
+    return any(
+        role.id in ADMIN_ROLE_IDS
+        for role in member.roles
+    )
 
-    return is_admin or is_party_member or is_mercenary
+
+# ==========================================
+# 예약 관리 권한 확인
+# 공대장 / 관리자 / 공대원
+# 용병 제외
+# ==========================================
+
+def can_manage_reservation(member):
+
+    if not isinstance(member, discord.Member):
+        return False
+
+    allowed_roles = (
+        ADMIN_ROLE_IDS
+        + PARTY_MEMBER_ROLE_IDS
+    )
+
+    return any(
+        role.id in allowed_roles
+        for role in member.roles
+    )
 
 
 # ==========================================
