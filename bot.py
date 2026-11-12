@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 import time
@@ -497,7 +498,10 @@ async def panel_command(ctx):
             "승인 완료 시 규칙 채널을 안내해 드립니다.\n\n"
             "━━━━━━━━━━━━━━━━━━\n"
             "📝 **지원서 작성**\n"
-            "아래 버튼을 눌러 지원서를 작성해 주세요."
+            "아래 버튼을 눌러 지원서를 작성해 주세요.\n\n"
+            "⚠️ **패널 이용에 문제가 있나요?**\n"
+            f"[📩 담당자에게 DM 보내기]"
+            f"(https://discord.com/users/{PANEL_OWNER_ID})"
         ),
         color=0x5865F2,
     )
@@ -602,7 +606,7 @@ if __name__ == "__main__":
         os.environ.get("PORT", 10000)
     )
 
-    # timeout_keep_alive를 추가하여 Render 로드밸런서와의 연결 끊김 현상 방지
+    # Render 로드밸런서 연결 유지
     uvicorn.run(
         app,
         host="0.0.0.0",
