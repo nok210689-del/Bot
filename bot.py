@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 import time
@@ -21,7 +22,6 @@ from config import (
 )
 
 from reservation import (
-    can_manage_reservation,  # is_admin 대신 공대원/관리자 통합 권한 함수 임포트
     ReservationView,
 )
 
@@ -37,6 +37,13 @@ from application import (
 from message_forward import (
     setup_message_forward,
 )
+
+
+# ==========================================
+# 패널 명령어 사용 권한
+# ==========================================
+
+PANEL_OWNER_ID = 218196720058630147
 
 
 # ==========================================
@@ -509,12 +516,11 @@ async def on_member_join(member):
 @bot.command(name="패널")
 async def panel_command(ctx):
 
-    # 패널 명령어는 기존처럼 관리자만 쓰도록 유지하려면 is_admin을 체크하거나,
-    # 공대원도 쓰게 하려면 can_manage_reservation(ctx.author)로 변경하시면 됩니다.
-    if not can_manage_reservation(ctx.author):
+    # 지정된 Discord 계정만 사용 가능
+    if ctx.author.id != PANEL_OWNER_ID:
 
         await ctx.reply(
-            "공대원 또는 관리자만 사용할 수 있습니다."
+            "패널 명령어 사용 권한이 없습니다."
         )
 
         return
