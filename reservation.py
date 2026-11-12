@@ -1,4 +1,3 @@
-
 import re
 from datetime import datetime
 
@@ -7,6 +6,8 @@ import discord
 from config import (
     RESERVATION_CHANNEL_ID,
     ADMIN_ROLE_IDS,
+    PARTY_MEMBER_ROLE_IDS,
+    MERCENARY_ROLE_IDS,
 )
 
 
@@ -21,18 +22,23 @@ DM_SENT_MARKER = "예약 알림 발송 완료"
 
 
 # ==========================================
-# 관리자 확인
+# 권한 확인 (관리자, 공대원, 용병)
 # ==========================================
 
-def is_admin(member):
-
+def can_manage_reservation(member):
     if not isinstance(member, discord.Member):
         return False
 
-    return any(
-        role.id in ADMIN_ROLE_IDS
-        for role in member.roles
-    )
+    # 1. 관리자(공대장 등) 권한 체크
+    is_admin = any(role.id in ADMIN_ROLE_IDS for role in member.roles)
+    
+    # 2. 공대원 권한 체크
+    is_party_member = any(role.id in PARTY_MEMBER_ROLE_IDS for role in member.roles)
+    
+    # 3. 용병 권한 체크 (용병도 권한을 주고 싶지 않다면 아래 줄에서 'or any(...)' 부분을 제거하세요)
+    is_mercenary = any(role.id in MERCENARY_ROLE_IDS for role in member.roles)
+
+    return is_admin or is_party_member or is_mercenary
 
 
 # ==========================================
@@ -108,14 +114,14 @@ def get_applicant_id(embed):
 
 class ReservationConfirmModal(discord.ui.Modal):
 
-    def __init__(self, message, admin_id):
+    def __init__(self, message, user_id):
 
         super().__init__(
             title="예약 확정 - 가격 입력"
         )
 
         self.message = message
-        self.admin_id = admin_id
+        self.user_id = user_id
 
         self.amount = discord.ui.TextInput(
             label="가격 (만 단위)",
@@ -128,16 +134,16 @@ class ReservationConfirmModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
 
-        if not is_admin(interaction.user):
+        if not can_manage_reservation(interaction.user):
             await interaction.response.send_message(
-                "관리자만 사용할 수 있습니다.",
+                "공대원 또는 관리자만 사용할 수 있습니다.",
                 ephemeral=True,
             )
             return
 
-        if interaction.user.id != self.admin_id:
+        if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "처음 예약 확정을 진행한 관리자만 처리할 수 있습니다.",
+                "처음 예약 확정을 진행한 사용자만 처리할 수 있습니다.",
                 ephemeral=True,
             )
             return
@@ -179,7 +185,7 @@ class ReservationConfirmModal(discord.ui.Modal):
             view=ReturnStatusView(
                 self.message,
                 amount,
-                self.admin_id,
+                self.user_id,
             ),
             ephemeral=True,
         )
@@ -191,11 +197,11 @@ class ReservationConfirmModal(discord.ui.Modal):
 
 class ReturnStatusSelect(discord.ui.Select):
 
-    def __init__(self, message, amount, admin_id):
+    def __init__(self, message, amount, user_id):
 
         self.message = message
         self.amount = amount
-        self.admin_id = admin_id
+        self.user_id = user_id
 
         options = [
             discord.SelectOption(
@@ -219,16 +225,16 @@ class ReturnStatusSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
 
-        if not is_admin(interaction.user):
+        if not can_manage_reservation(interaction.user):
             await interaction.response.send_message(
-                "관리자만 사용할 수 있습니다.",
+                "공대원 또는 관리자만 사용할 수 있습니다.",
                 ephemeral=True,
             )
             return
 
-        if interaction.user.id != self.admin_id:
+        if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "처음 예약 확정을 진행한 관리자만 처리할 수 있습니다.",
+                "처음 예약 확정을 진행한 사용자만 처리할 수 있습니다.",
                 ephemeral=True,
             )
             return
@@ -361,7 +367,7 @@ class ReturnStatusSelect(discord.ui.Select):
 
 class ReturnStatusView(discord.ui.View):
 
-    def __init__(self, message, amount, admin_id):
+    def __init__(self, message, amount, user_id):
 
         super().__init__(timeout=180)
 
@@ -369,7 +375,7 @@ class ReturnStatusView(discord.ui.View):
             ReturnStatusSelect(
                 message,
                 amount,
-                admin_id,
+                user_id,
             )
         )
 
@@ -394,9 +400,9 @@ class ReservationView(discord.ui.View):
         button: discord.ui.Button,
     ):
 
-        if not is_admin(interaction.user):
+        if not can_manage_reservation(interaction.user):
             await interaction.response.send_message(
-                "관리자만 사용할 수 있습니다.",
+                "공대원 또는 관리자만 사용할 수 있습니다.",
                 ephemeral=True,
             )
             return
