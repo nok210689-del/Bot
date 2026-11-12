@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 import time
@@ -22,7 +21,7 @@ from config import (
 )
 
 from reservation import (
-    is_admin,
+    can_manage_reservation,  # is_admin 대신 공대원/관리자 통합 권한 함수 임포트
     ReservationView,
 )
 
@@ -510,10 +509,12 @@ async def on_member_join(member):
 @bot.command(name="패널")
 async def panel_command(ctx):
 
-    if not is_admin(ctx.author):
+    # 패널 명령어는 기존처럼 관리자만 쓰도록 유지하려면 is_admin을 체크하거나,
+    # 공대원도 쓰게 하려면 can_manage_reservation(ctx.author)로 변경하시면 됩니다.
+    if not can_manage_reservation(ctx.author):
 
         await ctx.reply(
-            "관리자만 사용할 수 있습니다."
+            "공대원 또는 관리자만 사용할 수 있습니다."
         )
 
         return
@@ -572,7 +573,6 @@ async def lifespan(app: FastAPI):
             await bot_task
 
         except Exception as e:
-
             print(f"[종료 오류] {e}")
 
 
