@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 import time
@@ -51,7 +50,6 @@ PANEL_OWNER_ID = 218196720058630147
 # ==========================================
 
 class ApplyData(BaseModel):
-
     discord_id: str
     nickname: str
     role_type: str
@@ -99,15 +97,12 @@ views_registered = False
 # ==========================================
 
 async def refresh_invites(guild):
-
     try:
-
         invites = await guild.invites()
 
         current = {}
 
         for invite in invites:
-
             current[invite.code] = (
                 invite.uses or 0
             )
@@ -136,14 +131,12 @@ async def refresh_invites(guild):
         return True
 
     except discord.Forbidden:
-
         print(
             "[초대 추적 오류] "
             "서버 관리 권한이 필요합니다."
         )
 
     except discord.HTTPException as e:
-
         print(f"[초대 조회 오류] {e}")
 
     return False
@@ -155,7 +148,6 @@ async def refresh_invites(guild):
 
 @bot.event
 async def on_invite_create(invite):
-
     print(
         f"[초대 생성 이벤트 수신] "
         f"code={invite.code} / "
@@ -182,14 +174,12 @@ async def on_invite_create(invite):
     )
 
     if success:
-
         print(
             f"[초대 생성 기록 완료] "
             f"{invite.code} / {inviter_id}"
         )
 
         async with invite_lock:
-
             cache = invite_cache.setdefault(
                 invite.guild.id,
                 {},
@@ -200,7 +190,6 @@ async def on_invite_create(invite):
             )
 
     else:
-
         print(
             f"[초대 생성 기록 실패] {invite.code}"
         )
@@ -212,12 +201,10 @@ async def on_invite_create(invite):
 
 @bot.event
 async def on_invite_delete(invite):
-
     if invite.guild is None:
         return
 
     async with invite_lock:
-
         cache = invite_cache.get(
             invite.guild.id,
             {},
@@ -236,16 +223,13 @@ async def on_invite_delete(invite):
 # ==========================================
 
 async def detect_used_invite(guild, member_id):
-
     old_invites = invite_cache.get(
         guild.id,
         {},
     ).copy()
 
     for attempt in range(5):
-
         try:
-
             new_invites = await guild.invites()
 
             current_invites = {
@@ -261,7 +245,6 @@ async def detect_used_invite(guild, member_id):
             ]
 
             if len(used_invites) == 1:
-
                 used = used_invites[0]
 
                 inviter_id = (
@@ -278,7 +261,6 @@ async def detect_used_invite(guild, member_id):
                     return inviter_id
 
             elif len(used_invites) > 1:
-
                 print(
                     "[초대 추적] "
                     "여러 초대 링크 사용 감지"
@@ -296,7 +278,6 @@ async def detect_used_invite(guild, member_id):
             )
 
             if deleted_codes:
-
                 inviter_id = claim_deleted_invite(
                     guild.id,
                     list(deleted_codes),
@@ -304,7 +285,6 @@ async def detect_used_invite(guild, member_id):
                 )
 
                 if inviter_id is not None:
-
                     invite_cache[guild.id] = (
                         current_invites
                     )
@@ -327,7 +307,6 @@ async def detect_used_invite(guild, member_id):
             )
 
         except discord.Forbidden:
-
             print(
                 "[초대 추적 오류] "
                 "초대 조회 권한이 없습니다."
@@ -336,7 +315,6 @@ async def detect_used_invite(guild, member_id):
             return None
 
         except discord.HTTPException as e:
-
             print(f"[초대 조회 오류] {e}")
 
         if attempt < 4:
@@ -350,7 +328,6 @@ async def detect_used_invite(guild, member_id):
 # ==========================================
 
 class ApplyView(discord.ui.View):
-
     def __init__(self):
         super().__init__(timeout=None)
 
@@ -364,7 +341,6 @@ class ApplyView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ):
-
         await interaction.response.defer(
             ephemeral=True,
         )
@@ -401,48 +377,38 @@ class ApplyView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-
     global views_registered
 
     print("=" * 40)
-
     print(
         f"[Discord.py 버전] "
         f"{discord.__version__}"
     )
-
     print(
         f"[초대 인텐트 활성화] "
         f"{bot.intents.invites}"
     )
-
     print(
         f"[멤버 인텐트 활성화] "
         f"{bot.intents.members}"
     )
-
     print(
         f"[반응 인텐트 활성화] "
         f"{bot.intents.guild_reactions}"
     )
-
     print(
         f"[Gateway 인텐트 값] "
         f"{bot.intents.value}"
     )
-
     print(
         f"[초대 이벤트 핸들러 등록] "
         f"{callable(getattr(bot, 'on_invite_create', None))}"
     )
-
     print(f"Discord 로그인 완료: {bot.user}")
     print(f"서버 ID: {GUILD_ID}")
-
     print("=" * 40)
 
     if not views_registered:
-
         bot.add_view(ApplyView())
         bot.add_view(ReservationView())
 
@@ -454,7 +420,6 @@ async def on_ready():
     guild = bot.get_guild(GUILD_ID)
 
     if guild is not None:
-
         async with invite_lock:
             await refresh_invites(guild)
 
@@ -465,7 +430,6 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-
     if member.guild.id != GUILD_ID:
         return
 
@@ -475,14 +439,12 @@ async def on_member_join(member):
     )
 
     async with invite_lock:
-
         inviter_id = await detect_used_invite(
             member.guild,
             member.id,
         )
 
         if inviter_id is None:
-
             print(
                 f"[입장] {member} ({member.id}) "
                 "- 초대자 확인 불가"
@@ -515,10 +477,8 @@ async def on_member_join(member):
 
 @bot.command(name="패널")
 async def panel_command(ctx):
-
     # 지정된 Discord 계정만 사용 가능
     if ctx.author.id != PANEL_OWNER_ID:
-
         await ctx.reply(
             "패널 명령어 사용 권한이 없습니다."
         )
@@ -529,17 +489,13 @@ async def panel_command(ctx):
         title="🍁 RICE 공대 지원 접수처",
         description=(
             "메이플랜드 RICE 공대 손님 및 용병 지원 접수처입니다.\n\n"
-
             "👥 **손님 지원**\n"
             f"<#{NOTICE_CHANNEL_ID}> 채널에서 "
             "환불 및 주의사항을 반드시 확인해 주세요.\n\n"
-
             "⚔️ **용병 지원**\n"
             "지원서 제출 후 관리자 승인을 기다려 주세요.\n"
             "승인 완료 시 규칙 채널을 안내해 드립니다.\n\n"
-
             "━━━━━━━━━━━━━━━━━━\n"
-
             "📝 **지원서 작성**\n"
             "아래 버튼을 눌러 지원서를 작성해 주세요."
         ),
@@ -558,7 +514,6 @@ async def panel_command(ctx):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     print("[서버] Discord 봇 시작")
 
     bot_task = asyncio.create_task(
@@ -566,20 +521,19 @@ async def lifespan(app: FastAPI):
     )
 
     try:
-
         yield
-
     finally:
+        print("[서버] Discord 봇 종료 중...")
 
-        print("[서버] Discord 봇 종료")
-
-        await bot.close()
+        if not bot.is_closed():
+            await bot.close()
 
         try:
             await bot_task
-
         except Exception as e:
-            print(f"[종료 오류] {e}")
+            print(f"[종료 중 예외 발생 (무시됨)] {e}")
+
+        print("[서버] Discord 봇 완전 종료 완료")
 
 
 app = FastAPI(
@@ -607,7 +561,6 @@ app.add_middleware(
 @app.get("/")
 @app.head("/")
 async def health_check():
-
     return {"status": "ok"}
 
 
@@ -617,15 +570,12 @@ async def health_check():
 
 @app.post("/api/apply")
 async def apply_application(data: ApplyData):
-
     try:
-
         result = await process_application(data)
 
         return result
 
     except ValueError as e:
-
         raise HTTPException(
             status_code=400,
             detail=str(e),
@@ -635,7 +585,6 @@ async def apply_application(data: ApplyData):
         raise
 
     except Exception as e:
-
         print(f"[지원서 처리 오류] {e}")
 
         raise HTTPException(
@@ -649,13 +598,14 @@ async def apply_application(data: ApplyData):
 # ==========================================
 
 if __name__ == "__main__":
-
     port = int(
         os.environ.get("PORT", 10000)
     )
 
+    # timeout_keep_alive를 추가하여 Render 로드밸런서와의 연결 끊김 현상 방지
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=port,
+        timeout_keep_alive=75,
     )
