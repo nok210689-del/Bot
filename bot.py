@@ -317,6 +317,13 @@ async def detect_used_invite(guild, member_id):
         except discord.HTTPException as e:
             print(f"[초대 조회 오류] {e}")
 
+            if e.status == 429:
+                print(
+                    "[초대 추적 경고] "
+                    "디스코드 API 속도 제한(429)으로 인해 재시도를 즉시 중단합니다."
+                )
+                break
+
         if attempt < 4:
             await asyncio.sleep(1)
 
