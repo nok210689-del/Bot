@@ -123,7 +123,6 @@
             display: none !important;
         }
 
-        /* 날짜 선택 */
         .date-picker-wrap {
             position: relative;
         }
@@ -157,7 +156,6 @@
             font-size: 17px;
         }
 
-        /* 에러 흔들림 */
         @keyframes shake {
             0% { transform: translateX(0); }
             20% { transform: translateX(-6px); }
@@ -173,7 +171,6 @@
             background: rgba(242, 63, 67, 0.1) !important;
         }
 
-        /* 달력 */
         .calendar {
             position: absolute;
             top: calc(100% + 8px);
@@ -313,7 +310,6 @@
             >
         </div>
 
-        <!-- 약속 날짜 -->
         <div class="form-group">
             <label>
                 약속 날짜
@@ -483,7 +479,6 @@
                 day
             );
 
-            // 오늘 이전 날짜 선택 불가
             if (dateValue < todayValue) {
                 cell.disabled = true;
                 cell.classList.add("other");
@@ -611,7 +606,6 @@
             return;
         }
 
-        // 닉네임 공백 검사
         const nickname = nicknameInput.value.trim();
 
         if (!nickname) {
@@ -623,7 +617,6 @@
             return;
         }
 
-        // 지원 유형 검사
         if (!roleType.value) {
             statusDiv.className = "error";
             statusDiv.innerText =
@@ -633,7 +626,6 @@
             return;
         }
 
-        // 레벨 검사
         const level = Number(levelInput.value);
 
         if (
@@ -650,7 +642,6 @@
             return;
         }
 
-        // 직업 검사
         const job = jobInput.value.trim();
 
         if (!job) {
@@ -662,7 +653,6 @@
             return;
         }
 
-        // 약속 날짜 검사
         if (!applyDate.value) {
             statusDiv.className = "error";
             statusDiv.innerText =
@@ -701,23 +691,7 @@
             return;
         }
 
-        // 제출 전 전체 내용 확인
-        const confirmMessage =
-            "아래 내용으로 지원서를 제출하시겠습니까?\n\n" +
-            "━━━━━━━━━━━━━━━━━━\n" +
-            "인게임 닉네임 : " + nickname + "\n" +
-            "구분 : " + roleType.value + "\n" +
-            "레벨 : " + level + "\n" +
-            "직업 : " + job + "\n" +
-            "약속 날짜 : " + applyDate.value + "\n" +
-            "━━━━━━━━━━━━━━━━━━\n\n" +
-            "내용이 정확하다면 확인을 눌러주세요.";
-
-        if (!confirm(confirmMessage)) {
-            return;
-        }
-
-        // 서버 전송 데이터
+        // 확인창 없이 바로 서버 전송
         const formData = {
             discord_id: discordId,
             nickname: nickname,
