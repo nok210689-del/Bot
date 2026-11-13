@@ -648,6 +648,7 @@ async def health_check():
 
 
 # Discord 봇 실제 연결 상태 확인
+@app.head("/bot-health")
 @app.get("/bot-health")
 async def bot_health_check():
 
