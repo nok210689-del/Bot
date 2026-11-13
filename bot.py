@@ -640,10 +640,31 @@ app.add_middleware(
 # UptimeRobot 상태 확인
 # ==========================================
 
+# Render 웹서버 상태 확인
 @app.get("/")
 @app.head("/")
 async def health_check():
     return {"status": "ok"}
+
+
+# Discord 봇 실제 연결 상태 확인
+@app.get("/bot-health")
+async def bot_health_check():
+
+    if bot.is_ready() and not bot.is_closed():
+        return {
+            "status": "online",
+            "bot": str(bot.user),
+        }
+
+    print(
+        "[상태 확인] Discord 봇 오프라인 감지"
+    )
+
+    raise HTTPException(
+        status_code=503,
+        detail="Discord bot is offline",
+    )
 
 
 # ==========================================
