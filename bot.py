@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 import time
@@ -32,7 +33,6 @@ from application import (
     claim_deleted_invite,
 )
 
-# 메시지 자동 전달
 from message_forward import (
     setup_message_forward,
 )
@@ -77,7 +77,6 @@ bot = commands.Bot(
 
 set_bot(bot)
 
-# 메시지 전달 이벤트 등록
 setup_message_forward(bot)
 
 
@@ -89,7 +88,88 @@ invite_cache = {}
 
 invite_lock = asyncio.Lock()
 
+# 초대 API 전용 잠금
+invite_api_lock = asyncio.Lock()
+
+# 429 발생 후 초대 조회 재개 시각
+invite_blocked_until = 0
+
+# 재연결 시 중복 초기화 방지
 views_registered = False
+
+
+# ==========================================
+# 초대 API 차단 시간 확인
+# ==========================================
+
+def is_invite_api_blocked():
+    return time.monotonic() < invite_blocked_until
+
+
+# ==========================================
+# 초대 API 조회
+# ==========================================
+
+async def fetch_invites(guild):
+    global invite_blocked_until
+
+    if is_invite_api_blocked():
+        remaining = (
+            invite_blocked_until
+            - time.monotonic()
+        )
+
+        print(
+            f"[초대 조회 대기] "
+            f"429 차단 중 ({remaining:.1f}초 남음)"
+        )
+
+        return None
+
+    async with invite_api_lock:
+
+        if is_invite_api_blocked():
+            return None
+
+        try:
+            return await guild.invites()
+
+        except discord.Forbidden:
+            print(
+                "[초대 조회 오류] "
+                "초대 조회 권한이 없습니다."
+            )
+
+        except discord.HTTPException as e:
+            print(f"[초대 조회 오류] {e}")
+
+            if e.status == 429:
+                retry_after = getattr(
+                    e,
+                    "retry_after",
+                    None,
+                )
+
+                if retry_after is None:
+                    retry_after = 60
+
+                retry_after = max(
+                    float(retry_after),
+                    60,
+                )
+
+                invite_blocked_until = (
+                    time.monotonic()
+                    + retry_after
+                )
+
+                print(
+                    f"[초대 API 차단] "
+                    f"{retry_after:.1f}초 동안 "
+                    f"추가 조회 중단"
+                )
+
+        return None
 
 
 # ==========================================
@@ -97,49 +177,40 @@ views_registered = False
 # ==========================================
 
 async def refresh_invites(guild):
-    try:
-        invites = await guild.invites()
+    invites = await fetch_invites(guild)
 
-        current = {}
+    if invites is None:
+        return False
 
-        for invite in invites:
-            current[invite.code] = (
-                invite.uses or 0
-            )
+    current = {}
 
-            inviter_id = (
-                invite.inviter.id
-                if invite.inviter
-                else None
-            )
-
-            save_invite(
-                guild_id=guild.id,
-                code=invite.code,
-                inviter_id=inviter_id,
-                max_uses=invite.max_uses,
-                uses=invite.uses or 0,
-            )
-
-        invite_cache[guild.id] = current
-
-        print(
-            f"[초대 추적] "
-            f"초대 링크 {len(invites)}개 확인"
+    for invite in invites:
+        current[invite.code] = (
+            invite.uses or 0
         )
 
-        return True
-
-    except discord.Forbidden:
-        print(
-            "[초대 추적 오류] "
-            "서버 관리 권한이 필요합니다."
+        inviter_id = (
+            invite.inviter.id
+            if invite.inviter
+            else None
         )
 
-    except discord.HTTPException as e:
-        print(f"[초대 조회 오류] {e}")
+        save_invite(
+            guild_id=guild.id,
+            code=invite.code,
+            inviter_id=inviter_id,
+            max_uses=invite.max_uses,
+            uses=invite.uses or 0,
+        )
 
-    return False
+    invite_cache[guild.id] = current
+
+    print(
+        f"[초대 추적] "
+        f"초대 링크 {len(invites)}개 확인"
+    )
+
+    return True
 
 
 # ==========================================
@@ -228,103 +299,88 @@ async def detect_used_invite(guild, member_id):
         {},
     ).copy()
 
-    for attempt in range(5):
-        try:
-            new_invites = await guild.invites()
+    for attempt in range(3):
 
-            current_invites = {
-                invite.code: invite.uses or 0
-                for invite in new_invites
-            }
+        new_invites = await fetch_invites(guild)
 
-            used_invites = [
-                invite
-                for invite in new_invites
-                if (invite.uses or 0)
-                > old_invites.get(invite.code, 0)
-            ]
+        if new_invites is None:
+            return None
 
-            if len(used_invites) == 1:
-                used = used_invites[0]
+        current_invites = {
+            invite.code: invite.uses or 0
+            for invite in new_invites
+        }
 
-                inviter_id = (
-                    used.inviter.id
-                    if used.inviter
-                    else None
-                )
+        used_invites = [
+            invite
+            for invite in new_invites
+            if (invite.uses or 0)
+            > old_invites.get(invite.code, 0)
+        ]
 
-                invite_cache[guild.id] = (
-                    current_invites
-                )
+        if len(used_invites) == 1:
+            used = used_invites[0]
 
-                if inviter_id is not None:
-                    return inviter_id
-
-            elif len(used_invites) > 1:
-                print(
-                    "[초대 추적] "
-                    "여러 초대 링크 사용 감지"
-                )
-
-                invite_cache[guild.id] = (
-                    current_invites
-                )
-
-                return None
-
-            deleted_codes = (
-                set(old_invites)
-                - set(current_invites)
+            inviter_id = (
+                used.inviter.id
+                if used.inviter
+                else None
             )
-
-            if deleted_codes:
-                inviter_id = claim_deleted_invite(
-                    guild.id,
-                    list(deleted_codes),
-                    member_id,
-                )
-
-                if inviter_id is not None:
-                    invite_cache[guild.id] = (
-                        current_invites
-                    )
-
-                    print(
-                        "[초대 추적] "
-                        "삭제된 초대 링크와 입장자 연결 성공"
-                    )
-
-                    return inviter_id
 
             invite_cache[guild.id] = (
                 current_invites
             )
 
+            if inviter_id is not None:
+                return inviter_id
+
+        elif len(used_invites) > 1:
             print(
-                f"[초대 추적] "
-                f"사용 횟수 갱신 대기 "
-                f"({attempt + 1}/5)"
+                "[초대 추적] "
+                "여러 초대 링크 사용 감지"
             )
 
-        except discord.Forbidden:
-            print(
-                "[초대 추적 오류] "
-                "초대 조회 권한이 없습니다."
+            invite_cache[guild.id] = (
+                current_invites
             )
 
             return None
 
-        except discord.HTTPException as e:
-            print(f"[초대 조회 오류] {e}")
+        deleted_codes = (
+            set(old_invites)
+            - set(current_invites)
+        )
 
-            if e.status == 429:
-                print(
-                    "[초대 추적 경고] "
-                    "디스코드 API 속도 제한(429)으로 인해 재시도를 즉시 중단합니다."
+        if deleted_codes:
+            inviter_id = claim_deleted_invite(
+                guild.id,
+                list(deleted_codes),
+                member_id,
+            )
+
+            if inviter_id is not None:
+                invite_cache[guild.id] = (
+                    current_invites
                 )
-                break
 
-        if attempt < 4:
+                print(
+                    "[초대 추적] "
+                    "삭제된 초대 링크와 입장자 연결 성공"
+                )
+
+                return inviter_id
+
+        invite_cache[guild.id] = (
+            current_invites
+        )
+
+        print(
+            f"[초대 추적] "
+            f"사용 횟수 갱신 대기 "
+            f"({attempt + 1}/3)"
+        )
+
+        if attempt < 2:
             await asyncio.sleep(1)
 
     return None
@@ -428,7 +484,16 @@ async def on_ready():
 
     if guild is not None:
         async with invite_lock:
-            await refresh_invites(guild)
+
+            # 캐시가 이미 있다면 재연결 시
+            # 불필요한 초대 목록 조회 방지
+            if guild.id in invite_cache:
+                print(
+                    "[초대 추적] "
+                    "기존 캐시 유지"
+                )
+            else:
+                await refresh_invites(guild)
 
 
 # ==========================================
@@ -484,7 +549,6 @@ async def on_member_join(member):
 
 @bot.command(name="패널")
 async def panel_command(ctx):
-    # 지정된 Discord 계정만 사용 가능
     if ctx.author.id != PANEL_OWNER_ID:
         await ctx.reply(
             "패널 명령어 사용 권한이 없습니다."
@@ -534,6 +598,7 @@ async def lifespan(app: FastAPI):
 
     try:
         yield
+
     finally:
         print("[서버] Discord 봇 종료 중...")
 
@@ -542,10 +607,15 @@ async def lifespan(app: FastAPI):
 
         try:
             await bot_task
-        except Exception as e:
-            print(f"[종료 중 예외 발생 (무시됨)] {e}")
 
-        print("[서버] Discord 봇 완전 종료 완료")
+        except Exception as e:
+            print(
+                f"[종료 중 예외 발생 (무시됨)] {e}"
+            )
+
+        print(
+            "[서버] Discord 봇 완전 종료 완료"
+        )
 
 
 app = FastAPI(
@@ -597,7 +667,9 @@ async def apply_application(data: ApplyData):
         raise
 
     except Exception as e:
-        print(f"[지원서 처리 오류] {e}")
+        print(
+            f"[지원서 처리 오류] {e}"
+        )
 
         raise HTTPException(
             status_code=500,
@@ -614,7 +686,6 @@ if __name__ == "__main__":
         os.environ.get("PORT", 10000)
     )
 
-    # Render 로드밸런서 연결 유지
     uvicorn.run(
         app,
         host="0.0.0.0",
