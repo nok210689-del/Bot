@@ -7,6 +7,7 @@ from config import (
     SOURCE_CHANNEL_ID,
     TARGET_CHANNEL_ID,
     RAID_LEADER_ROLE_ID,
+    ADMIN_ROLE_IDS,
 )
 
 
@@ -33,8 +34,15 @@ def is_raid_leader(member):
     if not isinstance(member, discord.Member):
         return False
 
+    # 공대장 및 관리자 역할 허용
+    allowed_roles = set(ADMIN_ROLE_IDS)
+
+    allowed_roles.add(
+        RAID_LEADER_ROLE_ID
+    )
+
     return any(
-        role.id == RAID_LEADER_ROLE_ID
+        role.id in allowed_roles
         for role in member.roles
     )
 
@@ -53,7 +61,7 @@ async def handle_source_message(message):
 
     if not is_raid_leader(message.author):
         print(
-            f"[집결채널] 공대장 역할 없음 "
+            f"[집결채널] 공대장/관리자 역할 없음 "
             f"- 작성자: {message.author}"
         )
         return
@@ -63,7 +71,7 @@ async def handle_source_message(message):
         await message.add_reaction(FORWARD_EMOJI)
 
         print(
-            f"[집결채널] 공대장 메시지 확인 "
+            f"[집결채널] 공대장/관리자 메시지 확인 "
             f"- 작성자: {message.author} "
             f"- 메시지 ID: {message.id}"
         )
@@ -127,7 +135,7 @@ async def handle_forward_reaction(payload, bot):
             return
 
     # ======================================
-    # 공대장 역할 확인
+    # 공대장 및 관리자 역할 확인
     # ======================================
 
     if not is_raid_leader(member):
