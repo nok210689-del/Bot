@@ -565,8 +565,17 @@ async def register_reservation(
             "%Y-%m-%d",
         )
 
-        date_text = apply_date.strftime(
-            "%Y-%m-%d"
+        # ==================================
+        # 날짜 표시: 월.일(요일)
+        # ==================================
+
+        weekday = [
+            "월", "화", "수", "목", "금", "토", "일"
+        ]
+
+        date_text = (
+            f"{apply_date.month}.{apply_date.day}"
+            f"({weekday[apply_date.weekday()]})"
         )
 
         # ==================================
