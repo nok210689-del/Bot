@@ -483,7 +483,18 @@ async def process_application(data):
     except (ValueError, TypeError):
         raise ValueError("잘못된 참여 날짜입니다.")
 
-    date_short = apply_date.strftime("%m.%d")
+    # ======================================
+    # 날짜 표시: 월.일(요일)
+    # ======================================
+
+    weekday = [
+        "월", "화", "수", "목", "금", "토", "일"
+    ]
+
+    date_short = (
+        f"{apply_date.month}.{apply_date.day}"
+        f"({weekday[apply_date.weekday()]})"
+    )
 
     if data.role_type not in ["손님", "용병"]:
         raise ValueError("잘못된 지원 유형입니다.")
